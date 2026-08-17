@@ -1,43 +1,68 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, usersTable, studentProfilesTable, lessonProgressTable, studentSubscriptionsTable } from "@workspace/db";
+import {
+  db, usersTable, studentProfilesTable, lessonProgressTable,
+  studentSubscriptionsTable, levelsTable,
+} from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/profile", requireAuth, async (req, res): Promise<void> => {
-  const userId = req.session.userId!;
-
+/** Build the profile response shape, joining levels to get currentLevelCode for display */
+async function buildProfileResponse(userId: number) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const [profile] = await db.select().from(studentProfilesTable).where(eq(studentProfilesTable.userId, userId)).limit(1);
-  const [subscription] = await db.select().from(studentSubscriptionsTable)
+  const [profile] = await db
+    .select()
+    .from(studentProfilesTable)
+    .where(eq(studentProfilesTable.userId, userId))
+    .limit(1);
+  const [subscription] = await db
+    .select()
+    .from(studentSubscriptionsTable)
     .where(and(eq(studentSubscriptionsTable.userId, userId), eq(studentSubscriptionsTable.status, "active")))
     .limit(1);
 
-  if (!user || !profile) {
-    res.status(404).json({ error: "Profile not found" });
-    return;
-  }
-
-  const completedCount = await db.select().from(lessonProgressTable)
+  const completedRows = await db
+    .select()
+    .from(lessonProgressTable)
     .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.passed, true)));
 
-  res.json({
-    id: profile.id,
-    userId: user.id,
-    name: user.name,
-    email: user.email,
-    currentLevelCode: profile.currentLevelCode,
-    streakDays: profile.streakDays,
-    totalLessonsCompleted: completedCount.length,
-    totalXp: profile.totalXp,
-    placementCompleted: profile.placementCompleted,
+  // Derive currentLevelCode from the FK — preserved for frontend compatibility
+  const [currentLevel] = profile?.currentLevelId
+    ? await db.select().from(levelsTable).where(eq(levelsTable.id, profile.currentLevelId)).limit(1)
+    : [undefined];
+
+  return {
+    id: profile?.id ?? null,
+    userId: user?.id ?? null,
+    name: user?.name ?? null,
+    email: user?.email ?? null,
+    // Derived from join — not stored directly in student_profiles anymore
+    currentLevelCode: currentLevel?.code ?? null,
+    currentLevelId: profile?.currentLevelId ?? null,
+    curriculumId: profile?.curriculumId ?? null,
+    streakDays: profile?.streakDays ?? 0,
+    totalLessonsCompleted: completedRows.length,
+    totalXp: profile?.totalXp ?? 0,
+    placementCompleted: profile?.placementCompleted ?? false,
     subscriptionPlan: subscription?.planCode ?? null,
-    bio: profile.bio ?? null,
-    preferredLanguage: user.preferredLanguage,
-    country: user.country,
-    createdAt: user.createdAt,
-  });
+    bio: profile?.bio ?? null,
+    preferredLanguage: user?.preferredLanguage ?? "ar",
+    country: user?.country ?? "SY",
+    createdAt: user?.createdAt ?? null,
+  };
+}
+
+router.get("/profile", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.session.userId!;
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [profile] = await db
+    .select()
+    .from(studentProfilesTable)
+    .where(eq(studentProfilesTable.userId, userId))
+    .limit(1);
+  if (!user || !profile) { res.status(404).json({ error: "Profile not found" }); return; }
+  res.json(await buildProfileResponse(userId));
 });
 
 router.patch("/profile", requireAuth, async (req, res): Promise<void> => {
@@ -57,27 +82,7 @@ router.patch("/profile", requireAuth, async (req, res): Promise<void> => {
     await db.update(studentProfilesTable).set({ bio }).where(eq(studentProfilesTable.userId, userId));
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const [profile] = await db.select().from(studentProfilesTable).where(eq(studentProfilesTable.userId, userId)).limit(1);
-  const completedCount = await db.select().from(lessonProgressTable)
-    .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.passed, true)));
-
-  res.json({
-    id: profile.id,
-    userId: user.id,
-    name: user.name,
-    email: user.email,
-    currentLevelCode: profile.currentLevelCode,
-    streakDays: profile.streakDays,
-    totalLessonsCompleted: completedCount.length,
-    totalXp: profile.totalXp,
-    placementCompleted: profile.placementCompleted,
-    subscriptionPlan: null,
-    bio: profile.bio ?? null,
-    preferredLanguage: user.preferredLanguage,
-    country: user.country,
-    createdAt: user.createdAt,
-  });
+  res.json(await buildProfileResponse(userId));
 });
 
 export default router;

@@ -12,7 +12,12 @@ export interface StudentProfile {
   userId: number;
   name: string;
   email: string;
-  currentLevelCode: string;
+  /** @nullable */
+  currentLevelCode?: string | null;
+  /** @nullable */
+  currentLevelId?: number | null;
+  /** @nullable */
+  curriculumId?: number | null;
   streakDays: number;
   totalLessonsCompleted: number;
   totalXp?: number;

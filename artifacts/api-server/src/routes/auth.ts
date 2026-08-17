@@ -1,10 +1,21 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db, usersTable, studentProfilesTable } from "@workspace/db";
+import { db, usersTable, studentProfilesTable, curriculaTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
+
+/** Look up the default curriculum (first active one by id) */
+async function getDefaultCurriculumId(): Promise<number | null> {
+  const [curriculum] = await db
+    .select({ id: curriculaTable.id })
+    .from(curriculaTable)
+    .where(eq(curriculaTable.isActive, true))
+    .orderBy(curriculaTable.id)
+    .limit(1);
+  return curriculum?.id ?? null;
+}
 
 router.post("/auth/register", async (req, res): Promise<void> => {
   const { name, email, password, preferredLanguage = "ar", country = "SY" } = req.body;
@@ -34,10 +45,13 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     role: "student",
   }).returning();
 
-  // Create student profile
+  // Enroll student in the default curriculum (null if none exists yet)
+  const curriculumId = await getDefaultCurriculumId();
+
   await db.insert(studentProfilesTable).values({
     userId: user.id,
-    currentLevelCode: "A1.1",
+    curriculumId: curriculumId ?? undefined,
+    currentLevelId: undefined, // assigned after placement test
     streakDays: 0,
     totalXp: 0,
     placementCompleted: false,

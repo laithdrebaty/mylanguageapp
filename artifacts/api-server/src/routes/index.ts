@@ -11,6 +11,7 @@ import subscriptionsRouter from "./subscriptions";
 import dashboardRouter from "./dashboard";
 import reviewRouter from "./review";
 import adminRouter from "./admin";
+import languagesRouter from "./languages";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(subscriptionsRouter);
 router.use(dashboardRouter);
 router.use(reviewRouter);
 router.use(adminRouter);
+router.use(languagesRouter);
 
 export default router;

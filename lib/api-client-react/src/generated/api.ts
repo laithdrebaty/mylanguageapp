@@ -26,6 +26,7 @@ import type {
   AdminStats,
   AdminStudentList,
   AuthResult,
+  Curriculum,
   DashboardStats,
   ErrorResponse,
   ExerciseResult,
@@ -34,6 +35,7 @@ import type {
   GetLessonsParams,
   GetVocabularyParams,
   HealthStatus,
+  Language,
   LessonCompletionInput,
   LessonDetail,
   LessonProgress,
@@ -2273,4 +2275,160 @@ export const useUpdateAdminLesson = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getUpdateAdminLessonMutationOptions(options));
     }
+
+export const getGetLanguagesUrl = () => {
+
+
+
+
+  return `/api/languages`
+}
+
+/**
+ * Returns all languages that can be used as a target (learning) or learner (native) language. Adding a new language requires only an INSERT into the languages table — no code changes.
+ * @summary List all active languages
+ */
+export const getLanguages = async ( options?: Parameters<typeof customFetch>[1]): Promise<Language[]> => {
+
+  return customFetch<Language[]>(getGetLanguagesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLanguagesQueryKey = () => {
+    return [
+    `/api/languages`
+    ] as const;
+    }
+
+
+export const getGetLanguagesQueryOptions = <TData = Awaited<ReturnType<typeof getLanguages>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLanguages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLanguagesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLanguages>>> = ({ signal }) => getLanguages({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLanguages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLanguagesQueryResult = NonNullable<Awaited<ReturnType<typeof getLanguages>>>
+export type GetLanguagesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all active languages
+ */
+
+export function useGetLanguages<TData = Awaited<ReturnType<typeof getLanguages>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLanguages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLanguagesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetCurriculaUrl = () => {
+
+
+
+
+  return `/api/curricula`
+}
+
+/**
+ * Returns all active curricula. Each curriculum combines a target language and a learner language with its own independent level hierarchy. A new curriculum (using any level framework — CEFR, HSK, JLPT, or custom) can be created by inserting a row here and adding levels with the new curriculum_id. No code changes required.
+ * @summary List all active curricula
+ */
+export const getCurricula = async ( options?: Parameters<typeof customFetch>[1]): Promise<Curriculum[]> => {
+
+  return customFetch<Curriculum[]>(getGetCurriculaUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurriculaQueryKey = () => {
+    return [
+    `/api/curricula`
+    ] as const;
+    }
+
+
+export const getGetCurriculaQueryOptions = <TData = Awaited<ReturnType<typeof getCurricula>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurricula>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurriculaQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurricula>>> = ({ signal }) => getCurricula({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurricula>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurriculaQueryResult = NonNullable<Awaited<ReturnType<typeof getCurricula>>>
+export type GetCurriculaQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all active curricula
+ */
+
+export function useGetCurricula<TData = Awaited<ReturnType<typeof getCurricula>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurricula>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurriculaQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

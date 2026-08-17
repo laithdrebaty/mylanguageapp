@@ -1,0 +1,46 @@
+Extend the previous architectural requirement with one additional requirement: the level/curriculum system itself must be fully customizable and must NOT be hard-coded to CEFR or to the English A1.1–C2.2 structure.
+
+Ascension will initially contain only Arabic → English learning content. Do not create additional language content now. However, the underlying platform must be designed so that additional target languages and learner languages can be added later without rewriting the learning engine.
+
+Language architecture:
+
+Target/learning language must be configurable.
+Student/native language must be configurable.
+Interface language must be configurable.
+Curriculum must belong to a specific target language and learner-language combination where appropriate.
+
+Customizable level architecture:
+
+Do NOT hard-code CEFR as the only level system.
+Do NOT assume every language uses A1, A2, B1, B2, C1 and C2.
+Levels must be database-driven/configurable.
+Each language/curriculum can define its own level system.
+A curriculum could use CEFR (e.g. A1, A2, B1...), CEFR subdivisions (e.g. A1.1, A1.2...), another standardized framework, or a completely custom level structure.
+Level names, descriptions, ordering, difficulty, prerequisites and subdivisions should be configurable.
+The application should not require code changes when an administrator creates a new level structure.
+
+Example:
+English currently uses:
+A1.1 → A1.2 → A2.1 → A2.2 → B1.1 → B1.2 → B2.1 → B2.2 → C1.1 → C1.2 → C2.1 → C2.2.
+
+A future German curriculum might use a different structure and must be able to define its own levels independently.
+
+Lesson architecture:
+
+Lessons belong to a configurable curriculum and level.
+Lesson duration must be configurable.
+Lessons should be composed of configurable content blocks.
+Content blocks can include reading, listening, vocabulary, MCQs, speaking, pronunciation and open-ended activities.
+Required and optional blocks should be supported.
+Do not hard-code lesson duration or lesson structure.
+
+Important: Preserve all existing working Arabic-English functionality and content. Make the minimum architectural changes necessary to make the system extensible. Do not rebuild the application unnecessarily.
+
+After implementation, provide a technical summary explaining how:
+
+A new target language can be added.
+A new learner/native language can be added.
+A completely different level system can be created.
+A level can be subdivided differently.
+A lesson with a different duration and structure can be created.
+All of the above can be managed without changing application code.

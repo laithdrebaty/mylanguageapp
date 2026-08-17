@@ -1,5 +1,7 @@
 import { pgTable, text, serial, integer, boolean, timestamp, real } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { levelsTable } from "./levels";
+import { curriculaTable } from "./languages";
 
 export const placementQuestionsTable = pgTable("placement_questions", {
   id: serial("id").primaryKey(),
@@ -26,10 +28,15 @@ export type PlacementOption = typeof placementOptionsTable.$inferSelect;
 export const placementResultsTable = pgTable("placement_results", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  /** Which curriculum was being tested */
+  curriculumId: integer("curriculum_id").references(() => curriculaTable.id),
   score: integer("score").notNull(),
   total: integer("total").notNull(),
   percentage: real("percentage").notNull(),
+  /** Human-readable level code for historical reference */
   assignedLevelCode: text("assigned_level_code").notNull(),
+  /** FK to the actual level record assigned */
+  assignedLevelId: integer("assigned_level_id").references(() => levelsTable.id),
   completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

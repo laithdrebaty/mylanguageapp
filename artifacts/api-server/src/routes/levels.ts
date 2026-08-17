@@ -1,59 +1,81 @@
 import { Router, type IRouter } from "express";
 import { eq, asc, and } from "drizzle-orm";
-import { db, levelsTable, lessonsTable, lessonProgressTable, studentProfilesTable } from "@workspace/db";
+import { db, levelsTable, lessonsTable, lessonProgressTable, studentProfilesTable, curriculaTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
-// Helper: get completed lesson IDs for user
 async function getCompletedLessonIds(userId: number | undefined): Promise<Set<number>> {
   if (!userId) return new Set();
-  const rows = await db.select({ lessonId: lessonProgressTable.lessonId })
+  const rows = await db
+    .select({ lessonId: lessonProgressTable.lessonId })
     .from(lessonProgressTable)
     .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.passed, true)));
   return new Set(rows.map((r) => r.lessonId));
 }
 
-// Helper: check if lesson is unlocked (first in level always unlocked; others unlock after prev passed)
-function isLessonUnlocked(
-  lesson: { id: number; order: number },
-  lessonsInLevel: Array<{ id: number; order: number }>,
-  completedIds: Set<number>,
-  currentLevelCode: string,
-  levelCode: string,
-): boolean {
-  // First lesson of the user's current level is always unlocked
-  if (lesson.order === 1 && levelCode === currentLevelCode) return true;
-  if (lesson.order === 1) {
-    // First lesson of other levels: only if previous level completed
-    return false; // simplified – unlock per progression logic
+/** Resolve which curriculum to use: from query param or student's enrolled curriculum or platform default */
+async function resolveCurriculumId(
+  queryCurriculumId: number | undefined,
+  userId: number | undefined,
+): Promise<number | null> {
+  if (queryCurriculumId) return queryCurriculumId;
+
+  if (userId) {
+    const [profile] = await db
+      .select({ curriculumId: studentProfilesTable.curriculumId })
+      .from(studentProfilesTable)
+      .where(eq(studentProfilesTable.userId, userId))
+      .limit(1);
+    if (profile?.curriculumId) return profile.curriculumId;
   }
-  // Subsequent lessons: require previous lesson passed
-  const prev = lessonsInLevel.find((l) => l.order === lesson.order - 1);
-  if (!prev) return true;
-  return completedIds.has(prev.id);
+
+  // Fall back to the first active curriculum
+  const [defaultC] = await db
+    .select({ id: curriculaTable.id })
+    .from(curriculaTable)
+    .where(eq(curriculaTable.isActive, true))
+    .orderBy(curriculaTable.id)
+    .limit(1);
+  return defaultC?.id ?? null;
 }
 
 router.get("/levels", async (req, res): Promise<void> => {
   const userId = req.session?.userId;
-  const levels = await db.select().from(levelsTable).orderBy(asc(levelsTable.order));
+  const queryCurriculumId = req.query.curriculumId ? parseInt(req.query.curriculumId as string, 10) : undefined;
+  const curriculumId = await resolveCurriculumId(queryCurriculumId, userId);
+
+  const where = curriculumId ? eq(levelsTable.curriculumId, curriculumId) : undefined;
+  const levels = await db
+    .select()
+    .from(levelsTable)
+    .where(where)
+    .orderBy(asc(levelsTable.order));
+
   const completedIds = await getCompletedLessonIds(userId);
-  const allLessons = await db.select().from(lessonsTable);
+  const allLessons = curriculumId
+    ? await db.select().from(lessonsTable)
+    : [];
 
   let profile = null;
   if (userId) {
-    const [p] = await db.select().from(studentProfilesTable).where(eq(studentProfilesTable.userId, userId)).limit(1);
+    const [p] = await db
+      .select()
+      .from(studentProfilesTable)
+      .where(eq(studentProfilesTable.userId, userId))
+      .limit(1);
     profile = p;
   }
-  const currentLevelCode = profile?.currentLevelCode ?? "A1.1";
+  const currentLevelId = profile?.currentLevelId ?? null;
 
   const result = levels.map((level) => {
     const levelLessons = allLessons.filter((l) => l.levelId === level.id && l.isPublished);
     const completedInLevel = levelLessons.filter((l) => completedIds.has(l.id)).length;
-    const isCurrentLevel = level.code === currentLevelCode;
+    const isCurrentLevel = level.id === currentLevelId;
     const isUnlocked = isCurrentLevel || level.order === 1;
     const isCompleted = levelLessons.length > 0 && completedInLevel === levelLessons.length;
     return {
       id: level.id,
+      curriculumId: level.curriculumId,
       code: level.code,
       name: level.name,
       nameAr: level.nameAr,
@@ -75,7 +97,11 @@ router.get("/levels/:levelId", async (req, res): Promise<void> => {
   const levelId = parseInt(raw, 10);
   if (isNaN(levelId)) { res.status(400).json({ error: "Invalid level ID" }); return; }
 
-  const [level] = await db.select().from(levelsTable).where(eq(levelsTable.id, levelId)).limit(1);
+  const [level] = await db
+    .select()
+    .from(levelsTable)
+    .where(eq(levelsTable.id, levelId))
+    .limit(1);
   if (!level) { res.status(404).json({ error: "Level not found" }); return; }
 
   const userId = req.session?.userId;
@@ -83,23 +109,28 @@ router.get("/levels/:levelId", async (req, res): Promise<void> => {
 
   let profile = null;
   if (userId) {
-    const [p] = await db.select().from(studentProfilesTable).where(eq(studentProfilesTable.userId, userId)).limit(1);
+    const [p] = await db
+      .select()
+      .from(studentProfilesTable)
+      .where(eq(studentProfilesTable.userId, userId))
+      .limit(1);
     profile = p;
   }
-  const currentLevelCode = profile?.currentLevelCode ?? "A1.1";
+  const currentLevelId = profile?.currentLevelId ?? null;
 
-  const levelLessons = await db.select().from(lessonsTable)
+  const levelLessons = await db
+    .select()
+    .from(lessonsTable)
     .where(and(eq(lessonsTable.levelId, levelId), eq(lessonsTable.isPublished, true)))
     .orderBy(asc(lessonsTable.order));
 
   const completedInLevel = levelLessons.filter((l) => completedIds.has(l.id)).length;
-  const isCurrentLevel = level.code === currentLevelCode;
+  const isCurrentLevel = level.id === currentLevelId;
   const isUnlocked = isCurrentLevel || level.order === 1;
   const isCompleted = levelLessons.length > 0 && completedInLevel === levelLessons.length;
 
   const lessonSummaries = levelLessons.map((lesson, idx) => {
     const unlocked = idx === 0 ? isUnlocked : completedIds.has(levelLessons[idx - 1].id);
-    const progressRow = null; // would need join
     return {
       id: lesson.id,
       levelId: lesson.levelId,
@@ -120,6 +151,7 @@ router.get("/levels/:levelId", async (req, res): Promise<void> => {
 
   res.json({
     id: level.id,
+    curriculumId: level.curriculumId,
     code: level.code,
     name: level.name,
     nameAr: level.nameAr,

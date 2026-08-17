@@ -98,7 +98,9 @@ export const GetProfileResponse = zod.object({
   "userId": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "currentLevelCode": zod.string(),
+  "currentLevelCode": zod.string().nullish(),
+  "currentLevelId": zod.number().nullish(),
+  "curriculumId": zod.number().nullish(),
   "streakDays": zod.number(),
   "totalLessonsCompleted": zod.number(),
   "totalXp": zod.number().optional(),
@@ -126,7 +128,9 @@ export const UpdateProfileResponse = zod.object({
   "userId": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "currentLevelCode": zod.string(),
+  "currentLevelCode": zod.string().nullish(),
+  "currentLevelId": zod.number().nullish(),
+  "curriculumId": zod.number().nullish(),
   "streakDays": zod.number(),
   "totalLessonsCompleted": zod.number(),
   "totalXp": zod.number().optional(),
@@ -509,7 +513,9 @@ export const GetDashboardResponse = zod.object({
   "userId": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "currentLevelCode": zod.string(),
+  "currentLevelCode": zod.string().nullish(),
+  "currentLevelId": zod.number().nullish(),
+  "curriculumId": zod.number().nullish(),
   "streakDays": zod.number(),
   "totalLessonsCompleted": zod.number(),
   "totalXp": zod.number().optional(),
@@ -729,5 +735,36 @@ export const UpdateAdminLessonResponse = zod.object({
   "xpReward": zod.number().optional(),
   "passingScore": zod.number().optional()
 })
+
+
+/**
+ * Returns all languages that can be used as a target (learning) or learner (native) language. Adding a new language requires only an INSERT into the languages table — no code changes.
+ * @summary List all active languages
+ */
+export const GetLanguagesResponseItem = zod.object({
+  "id": zod.number(),
+  "code": zod.string().describe('ISO 639-1 language code (e.g. \'en\', \'ar\', \'de\')'),
+  "name": zod.string().describe('English display name'),
+  "nameNative": zod.string().describe('Name in the language itself (e.g. \'العربية\')'),
+  "rtl": zod.boolean().describe('true for right-to-left languages')
+})
+export const GetLanguagesResponse = zod.array(GetLanguagesResponseItem)
+
+
+/**
+ * Returns all active curricula. Each curriculum combines a target language and a learner language with its own independent level hierarchy. A new curriculum (using any level framework — CEFR, HSK, JLPT, or custom) can be created by inserting a row here and adding levels with the new curriculum_id. No code changes required.
+ * @summary List all active curricula
+ */
+export const GetCurriculaResponseItem = zod.object({
+  "id": zod.number(),
+  "targetLanguageCode": zod.string().describe('The language students are learning'),
+  "learnerLanguageCode": zod.string().describe('The student\'s native\/interface language'),
+  "name": zod.string(),
+  "nameInLearnerLanguage": zod.string(),
+  "levelFramework": zod.string().describe('Descriptive tag for the level system used (e.g. CEFR, CEFR_subdivided, HSK, JLPT, custom). Informational only — does not constrain level codes.\n'),
+  "description": zod.string().nullish(),
+  "descriptionInLearnerLanguage": zod.string().nullish()
+})
+export const GetCurriculaResponse = zod.array(GetCurriculaResponseItem)
 
 

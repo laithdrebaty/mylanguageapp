@@ -16,17 +16,21 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
 
   if (!user || !profile) { res.status(404).json({ error: "Profile not found" }); return; }
 
-  const [subscription] = await db.select().from(studentSubscriptionsTable)
+  const [subscription] = await db
+    .select()
+    .from(studentSubscriptionsTable)
     .where(and(eq(studentSubscriptionsTable.userId, userId), eq(studentSubscriptionsTable.status, "active")))
     .limit(1);
 
-  // Current level
-  const [currentLevel] = await db.select().from(levelsTable)
-    .where(eq(levelsTable.code, profile.currentLevelCode))
-    .limit(1);
+  // Current level — look up by ID (curriculum-scoped, not by code string)
+  const [currentLevel] = profile.currentLevelId
+    ? await db.select().from(levelsTable).where(eq(levelsTable.id, profile.currentLevelId)).limit(1)
+    : [undefined];
 
   const allLessonsInLevel = currentLevel
-    ? await db.select().from(lessonsTable)
+    ? await db
+        .select()
+        .from(lessonsTable)
         .where(and(eq(lessonsTable.levelId, currentLevel.id), eq(lessonsTable.isPublished, true)))
     : [];
 
@@ -34,20 +38,17 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
   const passedIds = new Set(allProgress.filter((p) => p.passed).map((p) => p.lessonId));
   const completedInLevel = allLessonsInLevel.filter((l) => passedIds.has(l.id)).length;
 
-  // Next lesson to do
   const nextLesson = allLessonsInLevel
     .sort((a, b) => a.order - b.order)
     .find((l) => !passedIds.has(l.id));
 
-  // Weekly progress (last 7 days)
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weeklyCompleted = allProgress.filter(
-    (p) => p.completedAt && p.completedAt >= weekAgo && p.passed
+    (p) => p.completedAt && p.completedAt >= weekAgo && p.passed,
   );
   const xpThisWeek = weeklyCompleted.reduce((sum, p) => sum + p.xpEarned, 0);
 
-  // Recent activity
   const recentProgress = allProgress
     .filter((p) => p.completedAt !== null)
     .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0))
@@ -66,12 +67,11 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
             passed: p.passed,
           }
         : null;
-    })
+    }),
   );
 
-  const levelProgressPercent = allLessonsInLevel.length > 0
-    ? (completedInLevel / allLessonsInLevel.length) * 100
-    : 0;
+  const levelProgressPercent =
+    allLessonsInLevel.length > 0 ? (completedInLevel / allLessonsInLevel.length) * 100 : 0;
 
   res.json({
     student: {
@@ -79,7 +79,10 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
       userId: user.id,
       name: user.name,
       email: user.email,
-      currentLevelCode: profile.currentLevelCode,
+      // currentLevelCode derived from the joined level record — preserved for frontend compat
+      currentLevelCode: currentLevel?.code ?? null,
+      currentLevelId: profile.currentLevelId ?? null,
+      curriculumId: profile.curriculumId ?? null,
       streakDays: profile.streakDays,
       totalLessonsCompleted: passedIds.size,
       totalXp: profile.totalXp,
@@ -93,6 +96,7 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
     currentLevel: currentLevel
       ? {
           id: currentLevel.id,
+          curriculumId: currentLevel.curriculumId,
           code: currentLevel.code,
           name: currentLevel.name,
           nameAr: currentLevel.nameAr,

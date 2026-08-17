@@ -32,6 +32,8 @@ tags:
     description: Lesson review
   - name: admin
     description: Admin operations
+  - name: languages
+    description: Languages and curricula (target/learner language configuration)
 
 paths:
   /healthz:
@@ -722,8 +724,97 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  # ─── Languages & Curricula ─────────────────────────────────────────────────
+
+  /languages:
+    get:
+      operationId: getLanguages
+      tags: [languages]
+      summary: List all active languages
+      description: >
+        Returns all languages that can be used as a target (learning) or learner
+        (native) language. Adding a new language requires only an INSERT into the
+        languages table — no code changes.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Language"
+
+  /curricula:
+    get:
+      operationId: getCurricula
+      tags: [languages]
+      summary: List all active curricula
+      description: >
+        Returns all active curricula. Each curriculum combines a target language
+        and a learner language with its own independent level hierarchy.
+        A new curriculum (using any level framework — CEFR, HSK, JLPT, or custom)
+        can be created by inserting a row here and adding levels with the new
+        curriculum_id. No code changes required.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Curriculum"
+
 components:
   schemas:
+
+    # ─── Languages & Curricula ─────────────────────────────────────────────────
+
+    Language:
+      type: object
+      required: [id, code, name, nameNative, rtl]
+      properties:
+        id:
+          type: number
+        code:
+          type: string
+          description: ISO 639-1 language code (e.g. 'en', 'ar', 'de')
+        name:
+          type: string
+          description: English display name
+        nameNative:
+          type: string
+          description: Name in the language itself (e.g. 'العربية')
+        rtl:
+          type: boolean
+          description: true for right-to-left languages
+
+    Curriculum:
+      type: object
+      required: [id, targetLanguageCode, learnerLanguageCode, name, nameInLearnerLanguage, levelFramework]
+      properties:
+        id:
+          type: number
+        targetLanguageCode:
+          type: string
+          description: The language students are learning
+        learnerLanguageCode:
+          type: string
+          description: The student's native/interface language
+        name:
+          type: string
+        nameInLearnerLanguage:
+          type: string
+        levelFramework:
+          type: string
+          description: >
+            Descriptive tag for the level system used (e.g. CEFR, CEFR_subdivided,
+            HSK, JLPT, custom). Informational only — does not constrain level codes.
+        description:
+          type: ["string", "null"]
+        descriptionInLearnerLanguage:
+          type: ["string", "null"]
 
     # ─── Core ──────────────────────────────────────────────────────────────────
 
@@ -812,7 +903,7 @@ components:
 
     StudentProfile:
       type: object
-      required: [id, userId, name, email, currentLevelCode, streakDays, totalLessonsCompleted, createdAt]
+      required: [id, userId, name, email, streakDays, totalLessonsCompleted, createdAt]
       properties:
         id:
           type: number
@@ -822,8 +913,15 @@ components:
           type: string
         email:
           type: string
+        # Derived from join with levels table — preserved for frontend display
         currentLevelCode:
-          type: string
+          type: ["string", "null"]
+        # FK to levels.id — the student's current level (curriculum-scoped)
+        currentLevelId:
+          type: ["number", "null"]
+        # FK to curricula.id — which curriculum the student is enrolled in
+        curriculumId:
+          type: ["number", "null"]
         streakDays:
           type: number
         totalLessonsCompleted:

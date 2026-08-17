@@ -31,9 +31,9 @@ router.get("/lessons", async (req, res): Promise<void> => {
     const [p] = await db.select().from(studentProfilesTable).where(eq(studentProfilesTable.userId, userId)).limit(1);
     profile = p;
   }
-  const currentLevelCode = profile?.currentLevelCode ?? "A1.1";
+  const currentLevelId = profile?.currentLevelId ?? null;
 
-  // Get level codes for lessons
+  // Get level metadata for lessons
   const levelIds = [...new Set(lessons.map((l) => l.levelId))];
   const levels = levelIds.length > 0
     ? await db.select().from(levelsTable).where(eq(levelsTable.id, levelIds[0]))
@@ -47,7 +47,7 @@ router.get("/lessons", async (req, res): Promise<void> => {
   const result = lessons.map((lesson, idx) => {
     const prev = lessons.filter((l) => l.levelId === lesson.levelId && l.order < lesson.order)
       .sort((a, b) => b.order - a.order)[0];
-    const levelUnlocked = levels.find((lv) => lv.id === lesson.levelId)?.code === currentLevelCode
+    const levelUnlocked = lesson.levelId === currentLevelId
       || (levels.find((lv) => lv.id === lesson.levelId)?.order ?? 999) <= 1;
     const isUnlocked = lesson.order === 1 ? levelUnlocked : (prev ? completedIds.has(prev.id) : false);
     const progress = progressRows.find((p) => p.lessonId === lesson.id);
@@ -121,8 +121,8 @@ router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
     const [p] = await db.select().from(studentProfilesTable).where(eq(studentProfilesTable.userId, userId)).limit(1);
     profile = p;
   }
-  const currentLevelCode = profile?.currentLevelCode ?? "A1.1";
-  const levelUnlocked = level?.code === currentLevelCode || level?.order === 1;
+  const currentLevelId = profile?.currentLevelId ?? null;
+  const levelUnlocked = level?.id === currentLevelId || level?.order === 1;
   const isUnlocked = lesson.order === 1 ? levelUnlocked : (prevLesson ? completedIds.has(prevLesson.id) : false);
 
   const contentBlocks = blocks.map((block) => {

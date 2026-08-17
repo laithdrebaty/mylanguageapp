@@ -5,6 +5,34 @@
  * Ascension / لغتي — Syrian-first English learning platform API
  * OpenAPI spec version: 0.1.0
  */
+export interface Language {
+  id: number;
+  /** ISO 639-1 language code (e.g. 'en', 'ar', 'de') */
+  code: string;
+  /** English display name */
+  name: string;
+  /** Name in the language itself (e.g. 'العربية') */
+  nameNative: string;
+  /** true for right-to-left languages */
+  rtl: boolean;
+}
+
+export interface Curriculum {
+  id: number;
+  /** The language students are learning */
+  targetLanguageCode: string;
+  /** The student's native/interface language */
+  learnerLanguageCode: string;
+  name: string;
+  nameInLearnerLanguage: string;
+  /** Descriptive tag for the level system used (e.g. CEFR, CEFR_subdivided, HSK, JLPT, custom). Informational only — does not constrain level codes. */
+  levelFramework: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  descriptionInLearnerLanguage?: string | null;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -83,7 +111,12 @@ export interface StudentProfile {
   userId: number;
   name: string;
   email: string;
-  currentLevelCode: string;
+  /** @nullable */
+  currentLevelCode?: string | null;
+  /** @nullable */
+  currentLevelId?: number | null;
+  /** @nullable */
+  curriculumId?: number | null;
   streakDays: number;
   totalLessonsCompleted: number;
   totalXp?: number;
