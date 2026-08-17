@@ -5,6 +5,7 @@ import {
   lessonProgressTable, vocabularyTable, studentProfilesTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { cached, CK, TTL } from "../services/cache";
 
 const router: IRouter = Router();
 
@@ -75,64 +76,62 @@ router.get("/lessons", async (req, res): Promise<void> => {
   res.json(result);
 });
 
-router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
-  const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
-  const lessonId = parseInt(raw, 10);
-  if (isNaN(lessonId)) { res.status(400).json({ error: "Invalid lesson ID" }); return; }
+// ─── Lesson content cache ─────────────────────────────────────────────────────
+// The "static" parts of a lesson (blocks, exercises, options, vocabulary,
+// and the lesson + level metadata) are shared across all users and change
+// only when an admin edits content.  We cache this bundle and overlay the
+// per-user fields (isUnlocked, isCompleted, bestScore) at serve time.
 
+interface LessonContentBundle {
+  lesson: {
+    id: number; levelId: number; title: string; titleAr: string;
+    description: string | null; descriptionAr: string | null;
+    order: number; lessonType: string; estimatedMinutes: number;
+    xpReward: number; passingScore: number;
+    objectives: string[] | null; objectivesAr: string[] | null;
+  };
+  levelCode: string;
+  levelOrder: number;
+  levelId: number;
+  contentBlocks: Array<{
+    id: number; type: string; order: number;
+    content: string | null; contentAr: string | null; audioNote: string | null;
+    vocabularyItems: Array<{
+      id: number; levelId: number; lessonId: number | null;
+      word: string; translation: string;
+      exampleSentence: string | null; exampleSentenceAr: string | null;
+      pronunciation: string | null; audioNote: string | null;
+    }> | null;
+    exerciseId: number | null;
+    question: string | null; questionAr: string | null;
+    options: Array<{ id: string; text: string; textAr: string | null }> | null;
+    prompt: string | null; promptAr: string | null; exampleAudio: string | null;
+  }>;
+}
+
+async function loadLessonContent(lessonId: number): Promise<LessonContentBundle | null> {
   const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, lessonId)).limit(1);
-  if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
+  if (!lesson) return null;
 
-  const userId = req.session?.userId;
-
-  // Fetch all lesson content in parallel
-  const [level, blocks, exercises, vocab, progress] = await Promise.all([
+  const [level, blocks, exercises, vocab] = await Promise.all([
     db.select().from(levelsTable).where(eq(levelsTable.id, lesson.levelId)).limit(1).then(r => r[0]),
     db.select().from(contentBlocksTable)
       .where(eq(contentBlocksTable.lessonId, lessonId))
       .orderBy(asc(contentBlocksTable.order)),
     db.select().from(exercisesTable).where(eq(exercisesTable.lessonId, lessonId)),
     db.select().from(vocabularyTable).where(eq(vocabularyTable.lessonId, lessonId)),
-    userId
-      ? db.select().from(lessonProgressTable)
-          .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.lessonId, lessonId)))
-          .limit(1)
-          .then(r => r[0])
-      : Promise.resolve(undefined),
   ]);
 
-  // Fetch exercise options for THIS lesson's exercises only (was a full-table scan bug)
   const exerciseIds = exercises.map((e) => e.id);
-  const allExerciseOptions = exerciseIds.length > 0
+  const allOptions = exerciseIds.length > 0
     ? await db.select().from(exerciseOptionsTable)
         .where(inArray(exerciseOptionsTable.exerciseId, exerciseIds))
     : [];
 
-  // Unlock logic
-  const completedIds = userId ? await getCompletedLessonIds(userId) : new Set<number>();
-  const prevLesson = lesson.order > 1
-    ? await db.select().from(lessonsTable)
-        .where(and(eq(lessonsTable.levelId, lesson.levelId), eq(lessonsTable.order, lesson.order - 1)))
-        .limit(1)
-        .then(r => r[0] ?? null)
-    : null;
-
-  let profile = null;
-  if (userId) {
-    profile = await db.select().from(studentProfilesTable)
-      .where(eq(studentProfilesTable.userId, userId))
-      .limit(1)
-      .then(r => r[0] ?? null);
-  }
-  const currentLevelId = profile?.currentLevelId ?? null;
-  const levelUnlocked = level?.id === currentLevelId || level?.order === 1;
-  const isUnlocked = lesson.order === 1 ? levelUnlocked : (prevLesson ? completedIds.has(prevLesson.id) : false);
-
   const contentBlocks = blocks.map((block) => {
     const exercise = exercises.find((e) => e.contentBlockId === block.id);
-    const vocabItems = block.type === "vocabulary_list" ? vocab : [];
     const options = exercise
-      ? allExerciseOptions
+      ? allOptions
           .filter((o) => o.exerciseId === exercise.id)
           .map((o) => ({ id: o.optionId, text: o.text, textAr: o.textAr ?? null }))
       : null;
@@ -145,7 +144,7 @@ router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
       contentAr: block.contentAr ?? null,
       audioNote: block.audioNote ?? null,
       vocabularyItems: block.type === "vocabulary_list"
-        ? vocabItems.map((v) => ({
+        ? vocab.map((v) => ({
             id: v.id,
             levelId: v.levelId,
             lessonId: v.lessonId ?? null,
@@ -167,25 +166,98 @@ router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
     };
   });
 
-  res.json({
-    id: lesson.id,
-    levelId: lesson.levelId,
+  return {
+    lesson: {
+      id: lesson.id,
+      levelId: lesson.levelId,
+      title: lesson.title,
+      titleAr: lesson.titleAr,
+      description: lesson.description ?? null,
+      descriptionAr: lesson.descriptionAr ?? null,
+      order: lesson.order,
+      lessonType: lesson.lessonType,
+      estimatedMinutes: lesson.estimatedMinutes,
+      xpReward: lesson.xpReward,
+      passingScore: lesson.passingScore,
+      objectives: lesson.objectives ?? null,
+      objectivesAr: lesson.objectivesAr ?? null,
+    },
     levelCode: level?.code ?? "",
-    title: lesson.title,
-    titleAr: lesson.titleAr,
-    description: lesson.description ?? null,
-    descriptionAr: lesson.descriptionAr ?? null,
-    order: lesson.order,
-    lessonType: lesson.lessonType,
-    estimatedMinutes: lesson.estimatedMinutes,
-    isUnlocked,
-    isCompleted: completedIds.has(lesson.id),
-    bestScore: progress?.bestScore ?? null,
-    xpReward: lesson.xpReward,
-    passingScore: lesson.passingScore,
+    levelOrder: level?.order ?? 1,
+    levelId: level?.id ?? lesson.levelId,
     contentBlocks,
-    objectives: lesson.objectives ?? null,
-    objectivesAr: lesson.objectivesAr ?? null,
+  };
+}
+
+router.get("/lessons/:lessonId", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
+  const lessonId = parseInt(raw, 10);
+  if (isNaN(lessonId)) { res.status(400).json({ error: "Invalid lesson ID" }); return; }
+
+  // Load static content from cache (or DB on miss)
+  const bundle = await cached(
+    CK.lessonContent(lessonId),
+    TTL.LESSON_CONTENT,
+    () => loadLessonContent(lessonId),
+  );
+
+  if (!bundle) { res.status(404).json({ error: "Lesson not found" }); return; }
+
+  const userId = req.session?.userId;
+
+  // Overlay per-user fields — these are never cached
+  const [completedIds, progress, profile] = await Promise.all([
+    userId ? getCompletedLessonIds(userId) : Promise.resolve(new Set<number>()),
+    userId
+      ? db.select().from(lessonProgressTable)
+          .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.lessonId, lessonId)))
+          .limit(1)
+          .then(r => r[0])
+      : Promise.resolve(undefined),
+    userId
+      ? db.select().from(studentProfilesTable)
+          .where(eq(studentProfilesTable.userId, userId))
+          .limit(1)
+          .then(r => r[0] ?? null)
+      : Promise.resolve(null),
+  ]);
+
+  // Unlock logic using cached level order (no extra DB hit)
+  const prevLesson = bundle.lesson.order > 1
+    ? await db.select().from(lessonsTable)
+        .where(and(
+          eq(lessonsTable.levelId, bundle.lesson.levelId),
+          eq(lessonsTable.order, bundle.lesson.order - 1),
+        ))
+        .limit(1)
+        .then(r => r[0] ?? null)
+    : null;
+
+  const currentLevelId = profile?.currentLevelId ?? null;
+  const levelUnlocked = bundle.levelId === currentLevelId || bundle.levelOrder === 1;
+  const isUnlocked = bundle.lesson.order === 1
+    ? levelUnlocked
+    : (prevLesson ? completedIds.has(prevLesson.id) : false);
+
+  res.json({
+    id: bundle.lesson.id,
+    levelId: bundle.lesson.levelId,
+    levelCode: bundle.levelCode,
+    title: bundle.lesson.title,
+    titleAr: bundle.lesson.titleAr,
+    description: bundle.lesson.description,
+    descriptionAr: bundle.lesson.descriptionAr,
+    order: bundle.lesson.order,
+    lessonType: bundle.lesson.lessonType,
+    estimatedMinutes: bundle.lesson.estimatedMinutes,
+    isUnlocked,
+    isCompleted: completedIds.has(bundle.lesson.id),
+    bestScore: progress?.bestScore ?? null,
+    xpReward: bundle.lesson.xpReward,
+    passingScore: bundle.lesson.passingScore,
+    contentBlocks: bundle.contentBlocks,
+    objectives: bundle.lesson.objectives,
+    objectivesAr: bundle.lesson.objectivesAr,
   });
 });
 
@@ -230,7 +302,7 @@ router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promis
 
   if (isNaN(lessonId)) { res.status(400).json({ error: "Invalid lesson ID" }); return; }
 
-  const { score, totalQuestions, correctAnswers, speakingScore, timeSpentSeconds } = req.body;
+  const { score, speakingScore, timeSpentSeconds } = req.body;
 
   if (typeof score !== "number" || score < 0 || score > 100) {
     res.status(400).json({ error: "score must be a number between 0 and 100" });
@@ -262,7 +334,6 @@ router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promis
       completedAt: new Date(),
     }).where(eq(lessonProgressTable.id, existing.id)).returning();
 
-    // Award XP atomically using SQL increment — no race condition
     if (passed && !wasAlreadyPassed) {
       await db.update(studentProfilesTable)
         .set({ totalXp: sql`total_xp + ${xpEarned}` })
@@ -284,7 +355,6 @@ router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promis
       completedAt: new Date(),
     }).returning();
 
-    // Award XP atomically using SQL increment
     if (passed) {
       await db.update(studentProfilesTable)
         .set({ totalXp: sql`total_xp + ${xpEarned}` })
@@ -292,7 +362,6 @@ router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promis
     }
   }
 
-  // Check if next lesson was unlocked
   const [nextLesson] = await db.select().from(lessonsTable)
     .where(and(eq(lessonsTable.levelId, lesson.levelId), eq(lessonsTable.order, lesson.order + 1)))
     .limit(1);

@@ -1,50 +1,45 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, languagesTable, curriculaTable } from "@workspace/db";
+import { cached, CK, TTL } from "../services/cache";
 
 const router: IRouter = Router();
 
 /**
  * GET /languages
- * Returns all active languages.
- * A language record is the prerequisite for creating a curriculum.
- * New target or learner languages can be added by inserting into the languages
- * table without any code change.
+ * Cache: 1 h (languages change only when an admin inserts a new language row)
  */
 router.get("/languages", async (_req, res): Promise<void> => {
-  const languages = await db
-    .select()
-    .from(languagesTable)
-    .where(eq(languagesTable.isActive, true))
-    .orderBy(languagesTable.name);
-
-  res.json(
-    languages.map((l) => ({
+  const languages = await cached(CK.langList(), TTL.LANG_CURRICULA, async () => {
+    const rows = await db
+      .select()
+      .from(languagesTable)
+      .where(eq(languagesTable.isActive, true))
+      .orderBy(languagesTable.name);
+    return rows.map((l) => ({
       id: l.id,
       code: l.code,
       name: l.name,
       nameNative: l.nameNative,
       rtl: l.rtl,
-    })),
-  );
+    }));
+  });
+
+  res.json(languages);
 });
 
 /**
  * GET /curricula
- * Returns all active curricula with their language metadata.
- * Each curriculum owns its own level hierarchy — a new curriculum can use
- * CEFR, JLPT, HSK, or any completely custom level set simply by inserting
- * levels with the desired curriculum_id.
+ * Cache: 1 h (curricula are defined at platform setup; new ones are rare admin ops)
  */
 router.get("/curricula", async (_req, res): Promise<void> => {
-  const curricula = await db
-    .select()
-    .from(curriculaTable)
-    .where(eq(curriculaTable.isActive, true))
-    .orderBy(curriculaTable.id);
-
-  res.json(
-    curricula.map((c) => ({
+  const curricula = await cached(CK.curriculaList(), TTL.LANG_CURRICULA, async () => {
+    const rows = await db
+      .select()
+      .from(curriculaTable)
+      .where(eq(curriculaTable.isActive, true))
+      .orderBy(curriculaTable.id);
+    return rows.map((c) => ({
       id: c.id,
       targetLanguageCode: c.targetLanguageCode,
       learnerLanguageCode: c.learnerLanguageCode,
@@ -53,8 +48,10 @@ router.get("/curricula", async (_req, res): Promise<void> => {
       levelFramework: c.levelFramework,
       description: c.description ?? null,
       descriptionInLearnerLanguage: c.descriptionInLearnerLanguage ?? null,
-    })),
-  );
+    }));
+  });
+
+  res.json(curricula);
 });
 
 export default router;

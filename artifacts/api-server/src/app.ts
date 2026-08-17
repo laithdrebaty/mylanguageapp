@@ -6,33 +6,28 @@ import pinoHttp from "pino-http";
 import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
+import { redis } from "./services/redis";
 
 const app: Express = express();
 
 // Trust the first reverse proxy (Replit's nginx / Cloudflare).
-// Required for express-rate-limit to correctly identify client IPs from
-// X-Forwarded-For, and for secure cookies to work behind HTTPS termination.
-// Set to the number of proxy hops in your deployment (1 for Replit).
+// Required for rate-limit to correctly identify client IPs from X-Forwarded-For,
+// and for secure cookies to work behind HTTPS termination.
 app.set("trust proxy", parseInt(process.env.TRUST_PROXY ?? "1", 10));
 
 // ── Security headers ──────────────────────────────────────────────────────────
-// helmet sets a safe suite of HTTP response headers (CSP, HSTS, X-Frame, etc.)
 app.use(
   helmet({
-    // Allow cross-origin requests from the frontend in development/preview;
-    // in production tighten crossOriginResourcePolicy to "same-origin"
     crossOriginResourcePolicy: { policy: "cross-origin" },
-    // CSP is disabled here so the React SPA can load inline scripts;
-    // add a policy when the frontend is stable
     contentSecurityPolicy: false,
   }),
 );
 
 // ── Compression ────────────────────────────────────────────────────────────────
-// gzip/deflate all JSON and text responses — critical for users on slow connections
 app.use(compression());
 
 // ── Request logging ───────────────────────────────────────────────────────────
@@ -41,31 +36,18 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+        return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
 );
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-// In production, lock down to the known frontend origin via ALLOWED_ORIGIN env var.
-// In development, allow all origins so Vite dev server and Replit preview work.
 const allowedOrigin = process.env.ALLOWED_ORIGIN;
-app.use(
-  cors({
-    origin: allowedOrigin ?? true,
-    credentials: true,
-  }),
-);
+app.use(cors({ origin: allowedOrigin ?? true, credentials: true }));
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
@@ -93,30 +75,54 @@ app.use(
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     },
   }),
 );
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
-// Broad limit on all API endpoints — protects against general abuse
+/**
+ * Rate limit store selection:
+ * - Redis available → RedisStore: limits are shared across all API server
+ *   instances; correct for horizontal scaling.
+ * - Redis unavailable → default in-process store: per-instance limits only;
+ *   acceptable for single-server development.
+ *
+ * Failure behavior: if Redis goes down mid-flight, rate-limit-redis silently
+ * falls through to the next middleware (fail open). This is acceptable for
+ * general API protection. AI quota uses a stricter fail-closed mechanism
+ * (see services/ai-quota.ts).
+ */
+function makeRedisStore(prefix: string): RedisStore | undefined {
+  if (!redis) return undefined;
+  return new RedisStore({
+    prefix,
+    // ioredis call() is the raw Redis command interface
+    sendCommand: (...args: string[]) =>
+      (redis as InstanceType<typeof import("ioredis").default>).call(args[0], ...args.slice(1)) as Promise<unknown>,
+  });
+}
+
+// Broad limit: all API endpoints — protects against general abuse
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 200,
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10), // 15 min
+  limit: parseInt(process.env.RATE_LIMIT_API ?? "200", 10),
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: makeRedisStore("rl:api:"),
   message: { error: "Too many requests, please try again later" },
 });
 
-// Strict limit on auth endpoints — brute-force protection
+// Strict limit: auth endpoints — brute-force protection
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 10,
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10),
+  limit: parseInt(process.env.RATE_LIMIT_AUTH ?? "10", 10),
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: makeRedisStore("rl:auth:"),
+  skipSuccessfulRequests: true,
   message: { error: "Too many authentication attempts, please try again later" },
-  skipSuccessfulRequests: true, // only count failed attempts
 });
 
 app.use("/api", apiLimiter);
@@ -127,13 +133,14 @@ app.use("/api/auth/register", authLimiter);
 app.use("/api", router);
 
 // ── Global error handler ──────────────────────────────────────────────────────
-// Express 5 forwards async errors automatically; this normalises them into a
-// consistent { error: string } response regardless of where they originate.
+// Express 5 forwards async errors automatically. This normalises them into
+// a consistent { error: string } response with proper status codes.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction): void => {
-  const status = typeof (err as { status?: number }).status === "number"
-    ? (err as { status: number }).status
-    : 500;
+  const status =
+    typeof (err as { status?: number }).status === "number"
+      ? (err as { status: number }).status
+      : 500;
 
   const message =
     process.env.NODE_ENV !== "production" && err instanceof Error

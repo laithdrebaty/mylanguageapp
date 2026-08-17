@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq, and, count, avg } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   db, usersTable, studentSubscriptionsTable, lessonProgressTable,
-  lessonsTable, levelsTable,
+  lessonsTable,
 } from "@workspace/db";
 import { requireAdmin } from "../middlewares/auth";
+import { invalidate, invalidatePrefix, CK } from "../services/cache";
 
 const router: IRouter = Router();
 
@@ -39,8 +40,8 @@ router.get("/admin/stats", requireAdmin, async (req, res): Promise<void> => {
 });
 
 router.get("/admin/students", requireAdmin, async (req, res): Promise<void> => {
-  const page = parseInt(req.query.page as string ?? "1", 10);
-  const limit = parseInt(req.query.limit as string ?? "20", 10);
+  const page = Math.max(1, parseInt((req.query.page as string) ?? "1", 10));
+  const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) ?? "20", 10)));
   const offset = (page - 1) * limit;
 
   const all = await db.select().from(usersTable).where(eq(usersTable.role, "student"));
@@ -103,6 +104,14 @@ router.post("/admin/lessons", requireAdmin, async (req, res): Promise<void> => {
     passingScore: passingScore ?? 75,
   }).returning();
 
+  // Invalidate: level's lesson list may be cached inside lesson content bundles
+  // and the levels metadata cache includes lesson counts
+  await Promise.all([
+    invalidate(CK.lessonContent(lesson.id)),
+    invalidatePrefix(`v1:levels:c:`),         // all level caches (lesson counts changed)
+    invalidatePrefix(`v1:vocab:lesson:`),      // just in case vocab was pre-cached
+  ]);
+
   res.status(201).json({
     id: lesson.id,
     levelId: lesson.levelId,
@@ -124,14 +133,21 @@ router.patch("/admin/lessons/:lessonId", requireAdmin, async (req, res): Promise
   const lessonId = parseInt(raw, 10);
   if (isNaN(lessonId)) { res.status(400).json({ error: "Invalid lesson ID" }); return; }
 
+  const allowed = ["title", "titleAr", "description", "descriptionAr", "order", "lessonType", "estimatedMinutes", "isPublished", "xpReward", "passingScore"];
   const update: Record<string, unknown> = {};
-  const fields = ["title", "titleAr", "description", "descriptionAr", "order", "lessonType", "estimatedMinutes", "isPublished", "xpReward", "passingScore"];
-  for (const f of fields) {
+  for (const f of allowed) {
     if (req.body[f] !== undefined) update[f] = req.body[f];
   }
 
   const [lesson] = await db.update(lessonsTable).set(update).where(eq(lessonsTable.id, lessonId)).returning();
   if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
+
+  // Invalidate the specific lesson's content cache and affected level caches
+  await Promise.all([
+    invalidate(CK.lessonContent(lessonId)),
+    invalidatePrefix(`v1:levels:c:`),
+    invalidate(CK.vocabByLesson(lessonId)),
+  ]);
 
   res.json({
     id: lesson.id,

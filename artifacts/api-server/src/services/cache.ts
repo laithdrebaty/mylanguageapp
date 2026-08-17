@@ -1,120 +1,188 @@
 /**
- * Cache Service Abstraction
+ * Cache Service
  *
- * Wraps the cache backend behind a simple get/set/del interface so the
- * rest of the codebase is not coupled to any specific cache implementation.
+ * Implements cache-aside pattern. Callers use the public helpers
+ * (cached(), invalidate(), invalidatePrefix()) without knowing whether
+ * the backend is Redis or the in-process fallback.
  *
- * V1 uses an in-process LRU-style Map with TTL. This is sufficient for a
- * single-server deployment and avoids adding an external dependency before
- * it is needed.
- *
- * TO ADD REDIS LATER
- * ───────────────────
- * 1. `pnpm --filter @workspace/api-server add ioredis`
- * 2. Implement CacheProvider with a RedisCache class.
- * 3. Set CACHE_PROVIDER=redis and REDIS_URL=redis://... in the environment.
- * 4. Update createCacheProvider() to instantiate RedisCache.
- * 5. Nothing else in the codebase changes.
+ * BACKENDS
+ * ─────────
+ * - Redis (preferred): shared across all API server instances; enables
+ *   horizontal scaling.
+ * - In-process Map (automatic fallback): used when Redis is unavailable or
+ *   REDIS_URL is not set. Sufficient for a single-server deployment.
  *
  * WHAT SHOULD BE CACHED
  * ──────────────────────
- * - Curriculum metadata (long TTL, rarely changes)
- * - Level metadata (long TTL, rarely changes)
- * - Lesson content (medium TTL, changes only when admin publishes)
- * - Vocabulary lists (long TTL)
- * - Subscription plan definitions (long TTL)
+ * Only stable, shared (non-user-specific) educational content:
+ *   - Languages, Curricula, Levels (long TTL)
+ *   - Lesson content/blocks/exercises (medium TTL)
+ *   - Vocabulary by lesson/level (medium TTL)
+ *   - Subscription plan definitions (long TTL)
  *
  * WHAT MUST NOT BE CACHED HERE
  * ──────────────────────────────
- * - Per-user progress, scores, XP (always read from DB for consistency)
- * - Session data (managed by connect-pg-simple)
- * - Active subscription status (must be fresh to enforce access control)
+ * - Per-user progress, scores, XP
+ * - Active subscription status (access-control decisions)
+ * - Authentication/session data
+ * - Any data where staleness causes security or financial harm
+ *
+ * KEY NAMING CONVENTION
+ * ──────────────────────
+ * All keys use a version prefix so future schema changes can bust all
+ * existing cache entries by incrementing the version:
+ *   v1:lang:list
+ *   v1:curricula:list
+ *   v1:sub:plans
+ *   v1:levels:c:{curriculumId}
+ *   v1:lesson:{lessonId}:content
+ *   v1:vocab:lesson:{lessonId}
+ *   v1:vocab:level:{levelId}
  */
 
-// ─── Provider interface ───────────────────────────────────────────────────────
-
-export interface CacheProvider {
-  get<T>(key: string): Promise<T | null>;
-  set<T>(key: string, value: T, ttlSeconds: number): Promise<void>;
-  del(key: string): Promise<void>;
-  /** Flush all keys with a given prefix — useful for invalidating a lesson */
-  delByPrefix(prefix: string): Promise<void>;
-}
-
-// ─── In-process implementation ────────────────────────────────────────────────
-
-interface CacheEntry<T> {
-  value: T;
-  expiresAt: number;
-}
-
-class InProcessCache implements CacheProvider {
-  private store = new Map<string, CacheEntry<unknown>>();
-
-  async get<T>(key: string): Promise<T | null> {
-    const entry = this.store.get(key) as CacheEntry<T> | undefined;
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return null;
-    }
-    return entry.value;
-  }
-
-  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
-    this.store.set(key, {
-      value,
-      expiresAt: Date.now() + ttlSeconds * 1000,
-    });
-  }
-
-  async del(key: string): Promise<void> {
-    this.store.delete(key);
-  }
-
-  async delByPrefix(prefix: string): Promise<void> {
-    for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
-    }
-  }
-}
-
-// ─── Factory ──────────────────────────────────────────────────────────────────
-
-function createCacheProvider(): CacheProvider {
-  const provider = process.env.CACHE_PROVIDER ?? "memory";
-
-  switch (provider) {
-    case "memory":
-      return new InProcessCache();
-
-    // case "redis":
-    //   return new RedisCache({ url: process.env.REDIS_URL! });
-
-    default:
-      throw new Error(`Unknown CACHE_PROVIDER: "${provider}". Supported: memory, redis (coming)`);
-  }
-}
-
-export const cache: CacheProvider = createCacheProvider();
-
-// ─── Cache key helpers ────────────────────────────────────────────────────────
-// Centralising keys here prevents typos and makes invalidation auditable.
-
-export const CacheKeys = {
-  curriculumList: () => "curricula:list",
-  levelList: (curriculumId: number) => `levels:curriculum:${curriculumId}`,
-  lessonContent: (lessonId: number) => `lesson:content:${lessonId}`,
-  subscriptionPlans: () => "subscription:plans:list",
-  vocabularyByLesson: (lessonId: number) => `vocabulary:lesson:${lessonId}`,
-} as const;
+import { withRedis, isRedisAvailable } from "./redis";
+import { logger } from "../lib/logger";
 
 // ─── TTL constants (seconds) ──────────────────────────────────────────────────
-export const CacheTTL = {
-  /** 1 hour — curriculum/level definitions change rarely */
-  CURRICULUM_META: 3600,
-  /** 5 minutes — lesson content can be updated by admins */
-  LESSON_CONTENT: 300,
-  /** 24 hours — subscription plan definitions are very stable */
-  SUBSCRIPTION_PLANS: 86400,
+
+export const TTL = {
+  /** Languages and curricula rarely change — admin restart required anyway */
+  LANG_CURRICULA: 3600,          // 1 hour
+  /** Level structure changes infrequently */
+  LEVELS: 900,                    // 15 minutes
+  /** Lesson content can be updated by admins — invalidate on admin write */
+  LESSON_CONTENT: 300,            // 5 minutes
+  /** Vocabulary is stable */
+  VOCABULARY: 900,                // 15 minutes
+  /** Subscription plan definitions are very stable */
+  SUBSCRIPTION_PLANS: 3600,       // 1 hour
 } as const;
+
+// ─── Cache key registry ───────────────────────────────────────────────────────
+
+export const CK = {
+  langList:           () => "v1:lang:list",
+  curriculaList:      () => "v1:curricula:list",
+  subPlans:           () => "v1:sub:plans",
+  levelsByCurriculum: (cid: number) => `v1:levels:c:${cid}`,
+  lessonContent:      (lid: number) => `v1:lesson:${lid}:content`,
+  vocabByLesson:      (lid: number) => `v1:vocab:lesson:${lid}`,
+  vocabByLevel:       (lid: number) => `v1:vocab:level:${lid}`,
+} as const;
+
+// ─── In-process fallback cache ────────────────────────────────────────────────
+
+interface Entry<T> { value: T; expiresAt: number }
+const _local = new Map<string, Entry<unknown>>();
+
+function localGet<T>(key: string): T | null {
+  const e = _local.get(key) as Entry<T> | undefined;
+  if (!e) return null;
+  if (Date.now() > e.expiresAt) { _local.delete(key); return null; }
+  return e.value;
+}
+function localSet<T>(key: string, value: T, ttlSec: number): void {
+  _local.set(key, { value, expiresAt: Date.now() + ttlSec * 1000 });
+}
+function localDel(key: string): void { _local.delete(key); }
+function localDelByPrefix(prefix: string): void {
+  for (const k of _local.keys()) if (k.startsWith(prefix)) _local.delete(k);
+}
+
+// ─── Core cache operations ────────────────────────────────────────────────────
+
+/** Get a cached value. Returns null on miss or error. */
+async function get<T>(key: string): Promise<T | null> {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    const raw = await withRedis(
+      (r) => r.get(key),
+      null,
+    );
+    if (raw !== null) {
+      try { return JSON.parse(raw) as T; }
+      catch { return null; }
+    }
+  }
+  // Fall back to in-process
+  return localGet<T>(key);
+}
+
+/** Store a value in both Redis (if available) and the local fallback. */
+async function set<T>(key: string, value: T, ttlSec: number): Promise<void> {
+  const serialized = JSON.stringify(value);
+  // Write to Redis (best-effort, non-blocking)
+  if (isRedisAvailable()) {
+    await withRedis(
+      (r) => r.setex(key, ttlSec, serialized).then(() => undefined as unknown as null),
+      null,
+    );
+  }
+  // Always update local fallback so subsequent requests in this process benefit
+  localSet(key, value, ttlSec);
+}
+
+/** Delete a specific key from Redis and local cache. */
+async function del(key: string): Promise<void> {
+  if (isRedisAvailable()) {
+    await withRedis((r) => r.del(key).then(() => null), null);
+  }
+  localDel(key);
+}
+
+/** Delete all keys matching a prefix pattern from Redis and local cache. */
+async function delByPrefix(prefix: string): Promise<void> {
+  if (isRedisAvailable()) {
+    await withRedis(async (r) => {
+      // SCAN is safe for production — non-blocking, paginated
+      let cursor = "0";
+      do {
+        const [nextCursor, keys] = await r.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
+        cursor = nextCursor;
+        if (keys.length > 0) await r.del(...keys);
+      } while (cursor !== "0");
+      return null;
+    }, null);
+  }
+  localDelByPrefix(prefix);
+}
+
+// ─── Public helper: cache-aside ───────────────────────────────────────────────
+
+/**
+ * Cache-aside helper. Returns the cached value if present, otherwise
+ * calls `loader`, caches the result, and returns it.
+ *
+ * Usage:
+ *   const data = await cached(CK.langList(), TTL.LANG_CURRICULA, () => db.select()...);
+ */
+export async function cached<T>(
+  key: string,
+  ttlSec: number,
+  loader: () => Promise<T>,
+): Promise<T> {
+  const hit = await get<T>(key);
+  if (hit !== null) {
+    logger.debug({ key }, "Cache hit");
+    return hit;
+  }
+
+  const value = await loader();
+  // Store in background — don't await so the response isn't delayed by a slow Redis write
+  set(key, value, ttlSec).catch((err) =>
+    logger.warn({ err, key }, "Failed to write to cache"),
+  );
+  return value;
+}
+
+/** Invalidate a single cache key. */
+export async function invalidate(key: string): Promise<void> {
+  await del(key);
+  logger.debug({ key }, "Cache invalidated");
+}
+
+/** Invalidate all keys matching a prefix. */
+export async function invalidatePrefix(prefix: string): Promise<void> {
+  await delByPrefix(prefix);
+  logger.debug({ prefix }, "Cache prefix invalidated");
+}
