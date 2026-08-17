@@ -3,3 +3,4 @@
 - [CSS import ordering](css-import-ordering.md) — Google Fonts @import url() must be first line in index.css before tailwindcss/tw-animate-css imports to avoid PostCSS error.
 - [DB schema migration non-interactive](db-migration-non-interactive.md) — drizzle-kit push blocks on interactive TTY prompts for column drops/renames; apply structural changes via raw SQL through executeSql instead.
 - [Multi-curriculum architecture](multi-curriculum-arch.md) — languages + curricula tables own the level hierarchy; levels have curriculum_id FK; student_profiles use current_level_id (integer FK) not a string code.
+- [Production architecture foundation](arch-foundation.md) — helmet+compression+rate-limit added; 14 DB indexes; N+1 fixes; exercise options full-table-scan bug fixed; XP race condition fixed; AI/cache/jobs service stubs created.

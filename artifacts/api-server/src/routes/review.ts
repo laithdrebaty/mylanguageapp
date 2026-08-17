@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db, lessonProgressTable, lessonsTable, levelsTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 
@@ -13,13 +13,28 @@ router.get("/review/recent", requireAuth, async (req, res): Promise<void> => {
     .orderBy(desc(lessonProgressTable.completedAt))
     .limit(10);
 
-  const result = await Promise.all(
-    recentProgress.map(async (p) => {
-      const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, p.lessonId)).limit(1);
-      const [level] = lesson
-        ? await db.select().from(levelsTable).where(eq(levelsTable.id, lesson.levelId)).limit(1)
-        : [null];
+  if (recentProgress.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  // Batch-fetch all lessons in a single query (was N+1)
+  const lessonIds = recentProgress.map((p) => p.lessonId);
+  const lessons = await db.select().from(lessonsTable).where(inArray(lessonsTable.id, lessonIds));
+  const lessonMap = new Map(lessons.map((l) => [l.id, l]));
+
+  // Batch-fetch all levels referenced by those lessons
+  const levelIds = [...new Set(lessons.map((l) => l.levelId))];
+  const levels = levelIds.length > 0
+    ? await db.select().from(levelsTable).where(inArray(levelsTable.id, levelIds))
+    : [];
+  const levelMap = new Map(levels.map((l) => [l.id, l]));
+
+  const result = recentProgress
+    .map((p) => {
+      const lesson = lessonMap.get(p.lessonId);
       if (!lesson) return null;
+      const level = levelMap.get(lesson.levelId);
       return {
         id: lesson.id,
         levelId: lesson.levelId,
@@ -37,9 +52,9 @@ router.get("/review/recent", requireAuth, async (req, res): Promise<void> => {
         xpReward: lesson.xpReward,
       };
     })
-  );
+    .filter(Boolean);
 
-  res.json(result.filter(Boolean));
+  res.json(result);
 });
 
 router.get("/review/weak-areas", requireAuth, async (req, res): Promise<void> => {
@@ -50,11 +65,23 @@ router.get("/review/weak-areas", requireAuth, async (req, res): Promise<void> =>
     .orderBy(desc(lessonProgressTable.attempts));
 
   // Weak areas: attempted but best score < 75% or failed
-  const weakProgress = progress.filter((p) => p.bestScore !== null && p.bestScore < 75);
+  const weakProgress = progress
+    .filter((p) => p.bestScore !== null && p.bestScore < 75)
+    .slice(0, 10);
 
-  const result = await Promise.all(
-    weakProgress.slice(0, 10).map(async (p) => {
-      const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, p.lessonId)).limit(1);
+  if (weakProgress.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  // Batch-fetch all lessons in a single query (was N+1)
+  const lessonIds = weakProgress.map((p) => p.lessonId);
+  const lessons = await db.select().from(lessonsTable).where(inArray(lessonsTable.id, lessonIds));
+  const lessonMap = new Map(lessons.map((l) => [l.id, l]));
+
+  const result = weakProgress
+    .map((p) => {
+      const lesson = lessonMap.get(p.lessonId);
       if (!lesson) return null;
       return {
         lessonId: p.lessonId,
@@ -65,9 +92,9 @@ router.get("/review/weak-areas", requireAuth, async (req, res): Promise<void> =>
         lessonType: lesson.lessonType,
       };
     })
-  );
+    .filter(Boolean);
 
-  res.json(result.filter(Boolean));
+  res.json(result);
 });
 
 export default router;

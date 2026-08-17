@@ -1,0 +1,638 @@
+ASCENSION / لغتي — PRIORITY 1: PRODUCTION-READY ARCHITECTURE FOUNDATION
+
+We already have an initial working full-stack prototype of Ascension / لغتي.
+
+Your task now is NOT to add major new features and NOT to redesign the UI.
+
+Your priority is to inspect the existing application and strengthen/refactor its underlying architecture so that it can support the long-term product safely, efficiently and scalably.
+
+IMPORTANT:
+- Preserve all existing working functionality and content.
+- Do not unnecessarily rebuild existing components.
+- Do not delete working features.
+- Do not generate hundreds of lessons.
+- Do not implement video calls or group conversations yet.
+- Do not spend time on visual redesign.
+- Make the minimum necessary changes to establish a strong production-ready foundation.
+- Before changing architecture, inspect the existing code, database schema and API structure.
+- Reuse good existing code wherever possible.
+
+==================================================
+1. LANGUAGE-AGNOSTIC ARCHITECTURE
+==================================================
+
+The current launch product is ONLY:
+
+Arabic-speaking students learning English.
+
+However, the platform must be architecturally capable of supporting additional languages in the future without fundamentally rewriting the application.
+
+Do NOT hard-code English as the only learning language.
+
+The architecture should distinguish between:
+
+- Interface language
+- Student/native language
+- Target/learning language
+
+The curriculum/content architecture should support relationships such as:
+
+Native Language
+    ↓
+Target Language
+    ↓
+Curriculum
+    ↓
+Level System
+    ↓
+Level
+    ↓
+Lesson
+    ↓
+Content Blocks
+    ↓
+Activities / Questions / Vocabulary / Audio / Speaking
+
+Do NOT create additional language content now.
+
+Only make the architecture extensible.
+
+==================================================
+2. LEVEL SYSTEM MUST BE FULLY CUSTOMIZABLE
+==================================================
+
+Do NOT hard-code CEFR as the application's universal level system.
+
+English currently uses:
+
+A1.1
+A1.2
+A2.1
+A2.2
+B1.1
+B1.2
+B2.1
+B2.2
+C1.1
+C1.2
+C2.1
+C2.2
+
+This structure should be represented as configurable data, not hard-coded application logic.
+
+Future languages may use:
+
+- CEFR
+- CEFR subdivisions
+- another recognized framework
+- completely custom levels
+- different numbers of levels
+- different subdivisions
+
+The database and API must allow administrators to create and configure:
+
+- Curriculum
+- Level system
+- Levels
+- Level names
+- Level descriptions
+- Ordering
+- Difficulty
+- Prerequisites
+- Optional parent levels/sublevels
+
+Adding a new level or changing the structure must NOT require modifying application source code.
+
+==================================================
+3. CUSTOMIZABLE LESSON ARCHITECTURE
+==================================================
+
+Lessons must NOT have a hard-coded duration or fixed structure.
+
+Each lesson should support configurable metadata including:
+
+- Estimated duration
+- Target duration
+- Difficulty
+- Lesson order
+- Required/optional status
+- Curriculum
+- Level
+
+Lessons should be composed from configurable content/activity blocks.
+
+Possible blocks include:
+
+- Reading
+- Listening
+- Vocabulary
+- Multiple choice questions
+- Speaking
+- Pronunciation
+- Spelling
+- Open-ended questions
+- Translation
+- Conversation
+- Review
+
+The system must allow different lessons to have completely different combinations of blocks.
+
+For example:
+
+Lesson A = 20 minutes
+Reading + Vocabulary + MCQ
+
+Lesson B = 40 minutes
+Reading + Listening + Vocabulary + Speaking
+
+Lesson C = 60 minutes
+Extended Reading + Vocabulary + Pronunciation + Speaking + Open Questions
+
+Do not hard-code these structures.
+
+==================================================
+4. DATABASE ARCHITECTURE
+==================================================
+
+PostgreSQL should remain the preferred database unless there is a compelling technical reason in the existing project not to use it.
+
+Inspect the existing schema and improve it where necessary.
+
+Pay particular attention to:
+
+- Proper primary keys
+- Foreign keys
+- Referential integrity
+- Appropriate normalization
+- Appropriate denormalization where beneficial
+- Indexes
+- Composite indexes where justified
+- Unique constraints
+- Nullable fields
+- Cascading behavior
+- Efficient relationships
+- Avoiding unnecessary duplicated data
+
+The architecture should support at minimum:
+
+Users
+Profiles
+Subscriptions
+Languages
+Curricula
+Level Systems
+Levels
+Lessons
+Lesson Blocks
+Activities
+Questions
+Vocabulary
+Audio/Media references
+Attempts
+Answers
+Scores
+Progress
+Placement Tests
+Placement Questions
+Placement Results
+Conversation sessions
+Admin/content management data
+
+Do not create unnecessary tables merely for theoretical future features.
+
+==================================================
+5. DATABASE PERFORMANCE
+==================================================
+
+Performance and scalability are critical requirements.
+
+The application should eventually support:
+
+10,000+ registered users
+and potentially hundreds or thousands of concurrent active users.
+
+Design accordingly without over-engineering.
+
+Implement or verify:
+
+- Database indexes
+- Efficient queries
+- Pagination
+- Avoidance of N+1 queries
+- Efficient joins
+- Transactions where necessary
+- Query parameterization
+- Query timeouts where appropriate
+- Proper connection limits
+- Connection pooling
+
+Do NOT create an unlimited database connection per request.
+
+The database connection pool should be configurable through environment variables and appropriate for the deployment environment.
+
+Document the reasoning behind the chosen pool configuration.
+
+==================================================
+6. BACKEND PERFORMANCE AND CONCURRENCY
+==================================================
+
+Audit the existing backend architecture.
+
+The backend must be:
+
+- Stateless where practical
+- Non-blocking for normal I/O operations
+- Capable of horizontal scaling later
+- Efficient with memory
+- Efficient with CPU
+- Safe under concurrent requests
+
+Do not perform expensive CPU-bound or external AI operations synchronously when they can safely be handled asynchronously.
+
+Avoid:
+
+- Blocking operations
+- Unnecessary database requests
+- Repeated API calls
+- Large unnecessary payloads
+- Loading entire datasets when pagination is appropriate
+
+Keep API responses appropriately small.
+
+Use appropriate validation at API boundaries.
+
+==================================================
+7. AI ARCHITECTURE
+==================================================
+
+AI costs are extremely important because Ascension will charge approximately:
+
+General English: $2/month
+Professional English: $4/month
+
+Therefore, AI must NOT be called unnecessarily.
+
+The architecture should separate:
+
+NORMAL APPLICATION LOGIC
+from
+AI-POWERED FEATURES.
+
+AI should eventually be used selectively for:
+
+- Speaking evaluation
+- Pronunciation evaluation
+- Open-ended answers
+- Controlled tutoring
+- Conversation assistance
+- Conversation evaluation
+
+Do NOT make every lesson interaction dependent on an AI API.
+
+AI calls should be designed so they can later support:
+
+- Rate limiting
+- Per-user quotas
+- Usage tracking
+- Cost tracking
+- Model selection
+- Caching where appropriate
+- Failure handling
+- Retry limits
+- Asynchronous processing when appropriate
+
+Do not hard-code a specific AI provider throughout the application.
+
+Use an abstraction/service layer so the AI provider can be changed later.
+
+==================================================
+8. CACHING ARCHITECTURE
+==================================================
+
+Identify data that could eventually be cached, such as:
+
+- Curriculum metadata
+- Level metadata
+- Lesson content
+- Vocabulary
+- Public/static content
+
+Student-specific transactional data such as:
+
+- Progress
+- Attempts
+- Scores
+- Subscription status
+
+must remain properly consistent.
+
+Do not add Redis or another caching system merely for the sake of adding one.
+
+If caching is not currently necessary, create a clean abstraction/configuration path for adding it later.
+
+Explain your decision.
+
+==================================================
+9. BACKGROUND JOBS / ASYNCHRONOUS PROCESSING
+==================================================
+
+Identify operations that should eventually be processed asynchronously, such as:
+
+- AI evaluation
+- Audio processing
+- Speech processing
+- Notifications
+- Analytics
+- Usage aggregation
+- Heavy report generation
+
+Do not introduce a complicated microservice architecture.
+
+Keep the initial system simple, but make the architecture capable of introducing background workers/queues later.
+
+==================================================
+10. API ARCHITECTURE
+==================================================
+
+Review all existing API routes.
+
+Ensure:
+
+- Consistent naming
+- Input validation
+- Authentication checks
+- Authorization checks
+- Proper HTTP status codes
+- Consistent error responses
+- Pagination where appropriate
+- No sensitive information exposed
+- No unnecessary database queries
+
+Separate:
+
+- Public endpoints
+- Authenticated student endpoints
+- Admin endpoints
+
+Students must never be able to access or modify administrative data through manipulated requests.
+
+==================================================
+11. AUTHENTICATION AND SECURITY
+==================================================
+
+Audit the current authentication implementation.
+
+Check:
+
+- Password handling
+- Password hashing
+- Session/token security
+- Cookie security if applicable
+- CSRF protection where applicable
+- Authorization
+- Role-based access control
+- Input validation
+- SQL injection protection
+- XSS risks
+- Rate limiting opportunities
+- Sensitive error messages
+- Environment variables
+- API keys/secrets
+
+NEVER put API keys, database passwords or private secrets in frontend code.
+
+Ensure `.env` files containing secrets are not committed to the repository.
+
+Create/update `.env.example` with required variable names but no real secrets.
+
+==================================================
+12. CONFIGURATION
+==================================================
+
+Application configuration should be environment-based.
+
+Do not hard-code:
+
+- Database URLs
+- API keys
+- AI keys
+- Payment credentials
+- Production URLs
+- Secret keys
+- Environment-specific configuration
+
+Support at least:
+
+Development
+Production
+
+without changing application source code.
+
+==================================================
+13. FRONTEND/BACKEND SEPARATION
+==================================================
+
+Review whether frontend components are unnecessarily coupled directly to database structures or implementation details.
+
+The frontend should communicate through the API/service layer.
+
+Do not expose database credentials or server-only functionality to the client.
+
+Keep the architecture maintainable as the application grows.
+
+==================================================
+14. FUTURE REAL-TIME COMMUNICATION
+==================================================
+
+Ascension will eventually support:
+
+Phase 1:
+Student-to-student voice calls.
+
+Later:
+Video calls.
+
+Later:
+Group conversations.
+
+Potentially:
+AI acting as a third participant/evaluator.
+
+Do NOT implement these now.
+
+However, make sure the current architecture does not make future WebSocket/WebRTC integration unnecessarily difficult.
+
+Keep the normal API architecture separate from future realtime communication infrastructure.
+
+==================================================
+15. PERFORMANCE UNDER POOR INTERNET CONDITIONS
+==================================================
+
+We primarily target Syrian students, including users who may have slow or unstable internet connections.
+
+We cannot guarantee performance regardless of network quality, but the application should minimize unnecessary network usage.
+
+Consider:
+
+- Small API payloads
+- Compression
+- Pagination
+- Efficient loading
+- Lazy loading
+- Caching
+- Progressive loading
+- Audio optimization
+- Retry handling
+- Appropriate timeout handling
+- Avoiding unnecessary repeated API calls
+
+The application should remain usable on slower connections whenever technically possible.
+
+==================================================
+16. SCALABILITY WITHOUT PREMATURE MICROSERVICES
+==================================================
+
+Do NOT turn the project into a microservice architecture now.
+
+Start with a well-structured modular monolith unless the existing project has a compelling reason to do otherwise.
+
+The architecture should allow future separation of services if traffic eventually justifies it.
+
+Potential future services may include:
+
+- AI processing
+- Speech processing
+- Realtime communication
+- Notifications
+- Analytics
+
+But these should NOT become separate services merely for theoretical scalability.
+
+==================================================
+17. BACKEND LANGUAGE DECISION
+==================================================
+
+Inspect the current backend.
+
+The current project may use Node.js/TypeScript.
+
+Do NOT rewrite it automatically.
+
+Evaluate whether the current implementation is sufficient for the expected scale.
+
+Compare objectively:
+
+- Node.js/TypeScript
+- Go
+- Rust
+- Django/Python
+
+Consider:
+
+- Concurrency
+- Latency
+- Memory usage
+- CPU usage
+- Ecosystem
+- AI/API integrations
+- WebSocket support
+- WebRTC compatibility
+- Developer availability
+- Maintainability
+- Replit deployment compatibility
+- Actual expected Ascension workload
+
+If Node.js/TypeScript is sufficient, KEEP IT.
+
+Only recommend a rewrite if there is a compelling practical reason.
+
+==================================================
+18. OBSERVABILITY
+==================================================
+
+Prepare the architecture for:
+
+- Error logging
+- Request logging
+- Database performance monitoring
+- Slow query monitoring
+- AI usage monitoring
+- AI cost tracking
+- API latency monitoring
+- User activity metrics
+
+Do not necessarily integrate expensive third-party monitoring yet.
+
+Create clean logging/error-handling foundations.
+
+==================================================
+19. TESTING FOUNDATION
+==================================================
+
+Do not build a huge test suite yet.
+
+But establish the foundation for:
+
+- API tests
+- Authentication tests
+- Database tests
+- Lesson/progress tests
+- Permission tests
+
+Prioritize tests around critical business logic.
+
+==================================================
+20. IMPORTANT IMPLEMENTATION RULE
+==================================================
+
+Before making changes:
+
+1. Inspect the current repository.
+2. Inspect the current database schema.
+3. Inspect existing API routes.
+4. Inspect authentication.
+5. Identify what is already implemented correctly.
+6. Preserve working functionality.
+7. Make only necessary changes.
+8. Run/build/test after changes.
+9. Fix regressions.
+10. Do not rewrite components unnecessarily.
+
+Do NOT simply report that something is implemented if it has not actually been tested.
+
+==================================================
+FINAL DELIVERABLE
+==================================================
+
+When finished, provide a concise technical report containing:
+
+1. Current architecture
+2. Changes made
+3. Database changes
+4. Backend changes
+5. Frontend changes
+6. Security improvements
+7. Performance improvements
+8. Scalability improvements
+9. AI-cost architecture
+10. Remaining architectural risks
+11. What should be implemented next
+12. Any changes you deliberately did NOT make and why
+
+Most importantly:
+
+The final architecture must make the following possible without a fundamental rewrite:
+
+Arabic → English
+English → future languages
+Different native languages
+Different level systems
+Different lesson structures
+Different lesson durations
+10,000+ users
+High concurrent traffic
+Selective AI usage
+Future voice/video/group communication
+Future professional-English curricula
+
+Do not proceed with unrelated feature development until this architecture work is complete and verified.
