@@ -3,20 +3,42 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Ascension / لغتي — Syrian-first English learning platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: profile
+    description: Student profile
+  - name: placement
+    description: Placement test
+  - name: levels
+    description: Curriculum levels
+  - name: lessons
+    description: Lessons and lesson content
+  - name: exercises
+    description: Exercise submission
+  - name: vocabulary
+    description: Vocabulary items
+  - name: subscriptions
+    description: Subscription plans and management
+  - name: dashboard
+    description: Student dashboard
+  - name: review
+    description: Lesson review
+  - name: admin
+    description: Admin operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +46,1448 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Auth ───────────────────────────────────────────────────────────────────
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new student
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout current session
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Profile ────────────────────────────────────────────────────────────────
+
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get student profile
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentProfile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update student profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentProfile"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Placement Test ─────────────────────────────────────────────────────────
+
+  /placement-test:
+    get:
+      operationId: getPlacementTest
+      tags: [placement]
+      summary: Get placement test questions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementTest"
+
+  /placement-test/submit:
+    post:
+      operationId: submitPlacementTest
+      tags: [placement]
+      summary: Submit placement test answers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementTestSubmission"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementTestResult"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Levels ─────────────────────────────────────────────────────────────────
+
+  /levels:
+    get:
+      operationId: getLevels
+      tags: [levels]
+      summary: List all curriculum levels
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Level"
+
+  /levels/{levelId}:
+    get:
+      operationId: getLevel
+      tags: [levels]
+      summary: Get a single level with its lesson summaries
+      parameters:
+        - name: levelId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LevelDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Lessons ────────────────────────────────────────────────────────────────
+
+  /lessons:
+    get:
+      operationId: getLessons
+      tags: [lessons]
+      summary: List lessons, optionally filtered by level
+      parameters:
+        - name: levelId
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LessonSummary"
+
+  /lessons/{lessonId}:
+    get:
+      operationId: getLesson
+      tags: [lessons]
+      summary: Get full lesson content (requires subscription or free tier check)
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonDetail"
+        "403":
+          description: Locked (lesson not yet unlocked or requires subscription)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /lessons/{lessonId}/start:
+    post:
+      operationId: startLesson
+      tags: [lessons]
+      summary: Mark lesson as started, returns or creates progress record
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonProgress"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /lessons/{lessonId}/complete:
+    post:
+      operationId: completeLesson
+      tags: [lessons]
+      summary: Submit lesson completion with score
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonCompletionInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonProgress"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /lessons/{lessonId}/progress:
+    get:
+      operationId: getLessonProgress
+      tags: [lessons]
+      summary: Get student's progress for a specific lesson
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonProgress"
+        "404":
+          description: No progress record yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Exercises ──────────────────────────────────────────────────────────────
+
+  /exercises/{exerciseId}/submit:
+    post:
+      operationId: submitExercise
+      tags: [exercises]
+      summary: Submit answer for an MCQ or predefined exercise
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExerciseSubmission"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseResult"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Exercise not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Vocabulary ─────────────────────────────────────────────────────────────
+
+  /vocabulary:
+    get:
+      operationId: getVocabulary
+      tags: [vocabulary]
+      summary: Get vocabulary items, optionally filtered by lesson or level
+      parameters:
+        - name: lessonId
+          in: query
+          schema:
+            type: number
+        - name: levelId
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VocabularyItem"
+
+  # ─── Subscriptions ──────────────────────────────────────────────────────────
+
+  /subscription-plans:
+    get:
+      operationId: getSubscriptionPlans
+      tags: [subscriptions]
+      summary: List all available subscription plans
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SubscriptionPlan"
+
+  /subscription:
+    get:
+      operationId: getSubscription
+      tags: [subscriptions]
+      summary: Get current student subscription
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentSubscription"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Create or upgrade subscription (payment integration point)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentSubscription"
+        "400":
+          description: Payment not verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Dashboard ──────────────────────────────────────────────────────────────
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get student dashboard summary stats
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Review ─────────────────────────────────────────────────────────────────
+
+  /review/recent:
+    get:
+      operationId: getRecentLessons
+      tags: [review]
+      summary: Get recently completed lessons for review
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LessonSummary"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /review/weak-areas:
+    get:
+      operationId: getWeakAreas
+      tags: [review]
+      summary: Get lessons or topics where score was below 75%
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WeakAreaSummary"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Admin ──────────────────────────────────────────────────────────────────
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get platform-wide admin statistics
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+        "403":
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/students:
+    get:
+      operationId: getAdminStudents
+      tags: [admin]
+      summary: List all students (admin)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: number
+        - name: limit
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStudentList"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/lessons:
+    get:
+      operationId: getAdminLessons
+      tags: [admin]
+      summary: List all lessons (admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminLesson"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createAdminLesson
+      tags: [admin]
+      summary: Create a new lesson (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLessonInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLesson"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/lessons/{lessonId}:
+    patch:
+      operationId: updateAdminLesson
+      tags: [admin]
+      summary: Update a lesson (admin)
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLessonUpdate"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLesson"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
+
+    # ─── Core ──────────────────────────────────────────────────────────────────
+
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+
+    # ─── Auth ──────────────────────────────────────────────────────────────────
+
+    RegisterInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 2
+        email:
+          type: string
+        password:
+          type: string
+          minLength: 6
+        preferredLanguage:
+          type: string
+          enum: [ar, en]
+          default: ar
+        country:
+          type: string
+          default: SY
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    User:
+      type: object
+      required: [id, name, email, role, createdAt]
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [student, admin]
+        preferredLanguage:
+          type: string
+          enum: [ar, en]
+        country:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    AuthResult:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+
+    # ─── Profile ───────────────────────────────────────────────────────────────
+
+    StudentProfile:
+      type: object
+      required: [id, userId, name, email, currentLevelCode, streakDays, totalLessonsCompleted, createdAt]
+      properties:
+        id:
+          type: number
+        userId:
+          type: number
+        name:
+          type: string
+        email:
+          type: string
+        currentLevelCode:
+          type: string
+        streakDays:
+          type: number
+        totalLessonsCompleted:
+          type: number
+        totalXp:
+          type: number
+        placementCompleted:
+          type: boolean
+        subscriptionPlan:
+          type: ["string", "null"]
+        bio:
+          type: ["string", "null"]
+        preferredLanguage:
+          type: string
+          enum: [ar, en]
+        country:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ProfileUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        bio:
+          type: string
+        preferredLanguage:
+          type: string
+          enum: [ar, en]
+        country:
+          type: string
+
+    # ─── Placement Test ────────────────────────────────────────────────────────
+
+    PlacementQuestion:
+      type: object
+      required: [id, questionText, questionTextAr, type, options]
+      properties:
+        id:
+          type: number
+        questionText:
+          type: string
+        questionTextAr:
+          type: string
+        type:
+          type: string
+          enum: [mcq, fill_blank]
+        options:
+          type: array
+          items:
+            type: object
+            required: [id, text]
+            properties:
+              id:
+                type: string
+              text:
+                type: string
+              textAr:
+                type: ["string", "null"]
+        order:
+          type: number
+
+    PlacementTest:
+      type: object
+      required: [questions]
+      properties:
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlacementQuestion"
+
+    PlacementTestAnswer:
+      type: object
+      required: [questionId, selectedOptionId]
+      properties:
+        questionId:
+          type: number
+        selectedOptionId:
+          type: string
+
+    PlacementTestSubmission:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlacementTestAnswer"
+
+    PlacementTestResult:
+      type: object
+      required: [score, percentage, assignedLevelCode, assignedLevelName]
+      properties:
+        score:
+          type: number
+        total:
+          type: number
+        percentage:
+          type: number
+        assignedLevelCode:
+          type: string
+        assignedLevelName:
+          type: string
+        assignedLevelNameAr:
+          type: string
+        message:
+          type: string
+        messageAr:
+          type: string
+
+    # ─── Levels ────────────────────────────────────────────────────────────────
+
+    Level:
+      type: object
+      required: [id, code, name, nameAr, order, totalLessons, isUnlocked]
+      properties:
+        id:
+          type: number
+        code:
+          type: string
+        name:
+          type: string
+        nameAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        order:
+          type: number
+        totalLessons:
+          type: number
+        completedLessons:
+          type: number
+        isUnlocked:
+          type: boolean
+        isCompleted:
+          type: boolean
+
+    LevelDetail:
+      type: object
+      required: [id, code, name, nameAr, order, totalLessons, isUnlocked, lessons]
+      properties:
+        id:
+          type: number
+        code:
+          type: string
+        name:
+          type: string
+        nameAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        order:
+          type: number
+        totalLessons:
+          type: number
+        completedLessons:
+          type: number
+        isUnlocked:
+          type: boolean
+        isCompleted:
+          type: boolean
+        lessons:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonSummary"
+
+    # ─── Lessons ───────────────────────────────────────────────────────────────
+
+    LessonSummary:
+      type: object
+      required: [id, levelId, title, titleAr, order, lessonType, estimatedMinutes, isUnlocked, isCompleted]
+      properties:
+        id:
+          type: number
+        levelId:
+          type: number
+        levelCode:
+          type: string
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        order:
+          type: number
+        lessonType:
+          type: string
+          enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
+        estimatedMinutes:
+          type: number
+        isUnlocked:
+          type: boolean
+        isCompleted:
+          type: boolean
+        bestScore:
+          type: ["number", "null"]
+        xpReward:
+          type: number
+
+    ContentBlock:
+      type: object
+      required: [id, type, order]
+      properties:
+        id:
+          type: number
+        type:
+          type: string
+          enum: [text, audio_placeholder, vocabulary_list, mcq, speaking_prompt, pronunciation_guide, dialogue]
+        order:
+          type: number
+        # text block
+        content:
+          type: ["string", "null"]
+        contentAr:
+          type: ["string", "null"]
+        # audio placeholder
+        audioNote:
+          type: ["string", "null"]
+        # vocabulary list embedded ref
+        vocabularyItems:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/VocabularyItem"
+        # mcq
+        exerciseId:
+          type: ["number", "null"]
+        question:
+          type: ["string", "null"]
+        questionAr:
+          type: ["string", "null"]
+        options:
+          type: ["array", "null"]
+          items:
+            type: object
+            required: [id, text]
+            properties:
+              id:
+                type: string
+              text:
+                type: string
+              textAr:
+                type: ["string", "null"]
+        # speaking / pronunciation
+        prompt:
+          type: ["string", "null"]
+        promptAr:
+          type: ["string", "null"]
+        exampleAudio:
+          type: ["string", "null"]
+
+    LessonDetail:
+      type: object
+      required: [id, levelId, title, titleAr, order, lessonType, estimatedMinutes, isUnlocked, contentBlocks]
+      properties:
+        id:
+          type: number
+        levelId:
+          type: number
+        levelCode:
+          type: string
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        order:
+          type: number
+        lessonType:
+          type: string
+          enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
+        estimatedMinutes:
+          type: number
+        isUnlocked:
+          type: boolean
+        isCompleted:
+          type: boolean
+        bestScore:
+          type: ["number", "null"]
+        xpReward:
+          type: number
+        passingScore:
+          type: number
+        contentBlocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContentBlock"
+        objectives:
+          type: ["array", "null"]
+          items:
+            type: string
+        objectivesAr:
+          type: ["array", "null"]
+          items:
+            type: string
+
+    LessonCompletionInput:
+      type: object
+      required: [score, totalQuestions, correctAnswers]
+      properties:
+        score:
+          type: number
+        totalQuestions:
+          type: number
+        correctAnswers:
+          type: number
+        speakingScore:
+          type: ["number", "null"]
+        timeSpentSeconds:
+          type: number
+
+    LessonProgress:
+      type: object
+      required: [id, lessonId, studentId, status, attempts]
+      properties:
+        id:
+          type: number
+        lessonId:
+          type: number
+        studentId:
+          type: number
+        status:
+          type: string
+          enum: [not_started, in_progress, completed, passed, failed]
+        bestScore:
+          type: ["number", "null"]
+        lastScore:
+          type: ["number", "null"]
+        attempts:
+          type: number
+        passed:
+          type: boolean
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        xpEarned:
+          type: number
+        nextLessonUnlocked:
+          type: boolean
+
+    # ─── Exercises ─────────────────────────────────────────────────────────────
+
+    ExerciseSubmission:
+      type: object
+      required: [selectedOptionId]
+      properties:
+        selectedOptionId:
+          type: string
+
+    ExerciseResult:
+      type: object
+      required: [correct, correctOptionId, explanation]
+      properties:
+        correct:
+          type: boolean
+        correctOptionId:
+          type: string
+        explanation:
+          type: ["string", "null"]
+        explanationAr:
+          type: ["string", "null"]
+
+    # ─── Vocabulary ────────────────────────────────────────────────────────────
+
+    VocabularyItem:
+      type: object
+      required: [id, word, translation, levelId]
+      properties:
+        id:
+          type: number
+        levelId:
+          type: number
+        lessonId:
+          type: ["number", "null"]
+        word:
+          type: string
+        translation:
+          type: string
+        exampleSentence:
+          type: ["string", "null"]
+        exampleSentenceAr:
+          type: ["string", "null"]
+        pronunciation:
+          type: ["string", "null"]
+        audioNote:
+          type: ["string", "null"]
+
+    # ─── Subscriptions ─────────────────────────────────────────────────────────
+
+    SubscriptionPlan:
+      type: object
+      required: [id, code, name, nameAr, priceUsd, currency, features, featuresAr]
+      properties:
+        id:
+          type: number
+        code:
+          type: string
+          enum: [free, general_english, professional_english]
+        name:
+          type: string
+        nameAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        priceUsd:
+          type: number
+        currency:
+          type: string
+        billingCycle:
+          type: string
+          enum: [monthly, yearly]
+        features:
+          type: array
+          items:
+            type: string
+        featuresAr:
+          type: array
+          items:
+            type: string
+        includesConversationPartner:
+          type: boolean
+        lessonsAccess:
+          type: string
+          enum: [a1_only, full, professional_only]
+
+    SubscriptionInput:
+      type: object
+      required: [planCode, paymentMethod]
+      properties:
+        planCode:
+          type: string
+          enum: [general_english, professional_english]
+        paymentMethod:
+          type: string
+          enum: [sham_cash, cryptocurrency, manual]
+        paymentReference:
+          type: ["string", "null"]
+
+    StudentSubscription:
+      type: object
+      required: [id, studentId, planCode, planName, planNameAr, status, startedAt]
+      properties:
+        id:
+          type: number
+        studentId:
+          type: number
+        planCode:
+          type: string
+        planName:
+          type: string
+        planNameAr:
+          type: string
+        status:
+          type: string
+          enum: [active, pending_payment, expired, cancelled]
+        startedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        paymentMethod:
+          type: ["string", "null"]
+        paymentNote:
+          type: ["string", "null"]
+
+    # ─── Dashboard ─────────────────────────────────────────────────────────────
+
+    DashboardStats:
+      type: object
+      required: [student, currentLevel, nextLesson, weeklyProgress, recentActivity]
+      properties:
+        student:
+          $ref: "#/components/schemas/StudentProfile"
+        currentLevel:
+          $ref: "#/components/schemas/Level"
+        nextLesson:
+          $ref: "#/components/schemas/LessonSummary"
+        totalLessonsCompleted:
+          type: number
+        totalLessonsInLevel:
+          type: number
+        levelProgressPercent:
+          type: number
+        weeklyProgress:
+          type: object
+          required: [lessonsThisWeek, xpThisWeek, streakDays]
+          properties:
+            lessonsThisWeek:
+              type: number
+            xpThisWeek:
+              type: number
+            streakDays:
+              type: number
+        recentActivity:
+          type: array
+          items:
+            type: object
+            required: [lessonTitle, completedAt, score]
+            properties:
+              lessonId:
+                type: number
+              lessonTitle:
+                type: string
+              lessonTitleAr:
+                type: string
+              completedAt:
+                type: string
+                format: date-time
+              score:
+                type: number
+              passed:
+                type: boolean
+
+    # ─── Review ────────────────────────────────────────────────────────────────
+
+    WeakAreaSummary:
+      type: object
+      required: [lessonId, lessonTitle, lessonTitleAr, bestScore, attempts]
+      properties:
+        lessonId:
+          type: number
+        lessonTitle:
+          type: string
+        lessonTitleAr:
+          type: string
+        bestScore:
+          type: number
+        attempts:
+          type: number
+        lessonType:
+          type: string
+
+    # ─── Admin ─────────────────────────────────────────────────────────────────
+
+    AdminStats:
+      type: object
+      required: [totalStudents, activeSubscriptions, lessonsCompleted, avgScore]
+      properties:
+        totalStudents:
+          type: number
+        activeSubscriptions:
+          type: number
+        lessonsCompleted:
+          type: number
+        avgScore:
+          type: number
+        generalPlanCount:
+          type: number
+        professionalPlanCount:
+          type: number
+        newStudentsThisWeek:
+          type: number
+
+    AdminStudentList:
+      type: object
+      required: [students, total, page, limit]
+      properties:
+        students:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: number
+        page:
+          type: number
+        limit:
+          type: number
+
+    AdminLesson:
+      type: object
+      required: [id, levelId, title, titleAr, order, lessonType, estimatedMinutes, isPublished]
+      properties:
+        id:
+          type: number
+        levelId:
+          type: number
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        order:
+          type: number
+        lessonType:
+          type: string
+          enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
+        estimatedMinutes:
+          type: number
+        isPublished:
+          type: boolean
+        xpReward:
+          type: number
+        passingScore:
+          type: number
+
+    AdminLessonInput:
+      type: object
+      required: [levelId, title, titleAr, lessonType, estimatedMinutes, order]
+      properties:
+        levelId:
+          type: number
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: string
+        descriptionAr:
+          type: string
+        order:
+          type: number
+        lessonType:
+          type: string
+          enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
+        estimatedMinutes:
+          type: number
+        isPublished:
+          type: boolean
+        xpReward:
+          type: number
+        passingScore:
+          type: number
+
+    AdminLessonUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: string
+        descriptionAr:
+          type: string
+        order:
+          type: number
+        lessonType:
+          type: string
+          enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
+        estimatedMinutes:
+          type: number
+        isPublished:
+          type: boolean
+        xpReward:
+          type: number
+        passingScore:
+          type: number

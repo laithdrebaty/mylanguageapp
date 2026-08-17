@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Ascension / لغتي"
+description = "A Syrian-first English-learning platform (Ascension / لغتي). Students register, take a placement test, then follow a structured curriculum from A1.1 through C2.2 (~25-30 lessons per half-level). Each lesson has text, audio, vocabulary, MCQs, and speaking/pronunciation exercises. Subscriptions: General English $2/mo and Professional English $4/mo. Features a bilingual Arabic/English UI, lesson progress unlocking, dashboard, and an admin content area. Architecture supports future AI evaluation, video calls, and group conversations."
+version = "1.0.0"
+id = "artifacts/ascension"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18487
+
+[services.development]
+run = "pnpm --filter @workspace/ascension run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ascension", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ascension/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18487"
+BASE_PATH = "/"

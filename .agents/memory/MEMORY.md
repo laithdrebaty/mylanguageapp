@@ -1,0 +1,3 @@
+- [Zod v3 vs api-zod compatibility](zod-orval-compat.md) — api-server must never import @workspace/api-zod; Orval generates Zod v4 syntax incompatible with installed Zod v3.
+- [OpenAPI codegen rules](openapi-codegen-rules.md) — openapi.yaml must use type:number (not integer) and omit format:email for Orval 8.23 compatibility.
+- [CSS import ordering](css-import-ordering.md) — Google Fonts @import url() must be first line in index.css before tailwindcss/tw-animate-css imports to avoid PostCSS error.

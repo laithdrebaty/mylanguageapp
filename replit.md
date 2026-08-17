@@ -1,45 +1,50 @@
-# [Project name]
+# Ascension / لغتي
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Syrian-first English-learning platform. Mobile-first, Arabic-primary UI. Emphasizes speaking and conversation from day one, even at A1 level.
 
-## Run & Operate
+## Architecture
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+**Monorepo** (`pnpm` workspaces):
+- `artifacts/ascension` — React + Vite frontend (primary app)
+- `artifacts/api-server` — Express 5 API server
+- `lib/db` — Drizzle ORM + PostgreSQL (all schema)
+- `lib/api-spec` — OpenAPI spec (`openapi.yaml`)
+- `lib/api-client-react` — Orval-generated React Query hooks (from spec)
+- `lib/api-zod` — Orval-generated Zod schemas (server-side validation, NOT imported by api-server)
 
-## Stack
+## Key Technical Decisions
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- **Auth**: express-session + connect-pg-simple (PostgreSQL sessions) + bcryptjs. SESSION_SECRET env var required.
+- **Codegen**: Orval 8.23 generates Zod v4 syntax. Fix: replace `type: integer` with `type: number` and remove `format: email` in openapi.yaml. api-server does NOT import @workspace/api-zod (Zod v4 incompatibility with installed Zod v3).
+- **Payment**: stub only — records `pending_payment` status with paymentMethod (sham_cash / cryptocurrency / manual). No real gateway in V1.
+- **No AI in V1**: all content is static/structured; API is designed with clear hooks for future AI evaluation.
 
-## Where things live
+## Curriculum Structure
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+12 levels: A1.1 → C2.2, each with 5 lessons (A1.1 and A1.2 fully seeded).
+Passing threshold: 75%.
+Lesson types: general, reading, pronunciation, speaking, vocabulary, grammar, conversation.
 
-## Architecture decisions
+## Subscription Plans (seeded)
+- `free` — A1.1 access only, $0/mo
+- `general_english` — Full A1–C2, $2/mo
+- `professional_english` — Full + business vocabulary, $4/mo
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+## Running Workflows
+- `artifacts/api-server: API Server` — `pnpm --filter @workspace/api-server run dev`
+- `artifacts/ascension: web` — `pnpm --filter @workspace/ascension run dev`
 
-## Product
+## Seeded Data
+- 12 curriculum levels (A1.1–C2.2)
+- 10 A1.1 lessons + 5 A1.2 lessons
+- 19 vocabulary items for A1.1
+- Content blocks for all 5 A1.1 lessons
+- 3 exercises with options
+- 10 placement test questions with 4 options each
+- 3 subscription plans
 
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+## User Preferences
+- Syrian-first product framing — Arabic is the primary UI language
+- No emojis in the UI
+- Mobile-first design
+- Speaking emphasized from day one, even at A1
