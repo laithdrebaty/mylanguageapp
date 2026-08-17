@@ -1,32 +1,21 @@
-import { pgTable, text, serial, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { curriculaTable } from "./languages";
+import { usersTable } from "./users";
 
-/**
- * Levels belong to a curriculum and are ordered within it.
- * The code (e.g. "A1.1") is only unique per curriculum — two different
- * curricula may both have a level called "A1.1" without conflict.
- *
- * The level system (CEFR, HSK, custom, …) is entirely determined by which
- * codes and names you insert — the schema imposes no framework constraints.
- */
 export const levelsTable = pgTable("levels", {
   id: serial("id").primaryKey(),
-  /** Which curriculum this level belongs to */
   curriculumId: integer("curriculum_id")
     .notNull()
     .references(() => curriculaTable.id),
-  /** Level code within this curriculum — unique per curriculum, not globally */
   code: text("code").notNull(),
   name: text("name").notNull(),
   nameAr: text("name_ar").notNull(),
   description: text("description"),
   descriptionAr: text("description_ar"),
-  /** Ordering within the curriculum — determines progression sequence */
   order: integer("order").notNull(),
   totalLessons: integer("total_lessons").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  /** Codes are unique per curriculum — not globally */
   curriculumCodeUnique: uniqueIndex("levels_curriculum_code_unique").on(
     table.curriculumId,
     table.code,
@@ -35,29 +24,43 @@ export const levelsTable = pgTable("levels", {
 
 export type Level = typeof levelsTable.$inferSelect;
 
+/**
+ * Lesson status lifecycle:
+ *   draft → in_review → approved → published → archived
+ * Admins can also directly draft/unpublish/archive without the review step.
+ */
 export const lessonsTable = pgTable("lessons", {
   id: serial("id").primaryKey(),
   levelId: integer("level_id").notNull().references(() => levelsTable.id),
   title: text("title").notNull(),
   titleAr: text("title_ar").notNull(),
+  subtitle: text("subtitle"),
+  subtitleAr: text("subtitle_ar"),
   description: text("description"),
   descriptionAr: text("description_ar"),
   order: integer("order").notNull(),
-  /**
-   * Lesson type — configurable at insert time. Not constrained to the
-   * hard-coded enum so new types can be added without schema changes.
-   * Common values: general, reading, pronunciation, speaking, vocabulary,
-   * grammar, conversation — but any string is valid.
-   */
   lessonType: text("lesson_type").notNull().default("general"),
-  /** Configurable duration in minutes — not hard-coded */
   estimatedMinutes: integer("estimated_minutes").notNull().default(35),
+  /** Legacy field — kept in sync with status='published' for backward compatibility */
   isPublished: boolean("is_published").notNull().default(false),
+  /**
+   * CMS lifecycle status.
+   * Student APIs only serve lessons where status = 'published'.
+   */
+  status: text("status").notNull().default("draft"),
+  /** Incremented each time published content is edited. Lets student records stay linked to the version they experienced. */
+  contentVersion: integer("content_version").notNull().default(1),
   xpReward: integer("xp_reward").notNull().default(50),
-  /** Minimum percentage (0-100) to pass this lesson */
   passingScore: integer("passing_score").notNull().default(75),
+  difficulty: text("difficulty").default("intermediate"),
+  tags: text("tags").array(),
   objectives: text("objectives").array(),
   objectivesAr: text("objectives_ar").array(),
+  teacherNotes: text("teacher_notes"),
+  /** FK to the user who created this lesson. Null for legacy seeded content. */
+  createdBy: integer("created_by").references(() => usersTable.id),
+  /** Soft-delete timestamp. Non-null = soft-deleted. */
+  softDeletedAt: timestamp("soft_deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
@@ -66,29 +69,35 @@ export type Lesson = typeof lessonsTable.$inferSelect;
 
 /**
  * Content blocks are the building blocks of a lesson.
- * Block types are stored as plain text so new block types (video, quiz_set,
- * word_match, …) can be added by inserting rows — no schema change needed.
- *
- * Required vs. optional blocks: add an `is_required` boolean column if needed;
- * currently all blocks are considered required for scoring purposes.
+ * Block types are stored as plain text so new block types can be added
+ * by inserting rows — no schema change needed.
  */
 export const contentBlocksTable = pgTable("content_blocks", {
   id: serial("id").primaryKey(),
   lessonId: integer("lesson_id").notNull().references(() => lessonsTable.id, { onDelete: "cascade" }),
-  /**
-   * Block type string — extensible without schema change.
-   * Known values: text, audio_placeholder, vocabulary_list, mcq,
-   *   speaking_prompt, pronunciation_guide, dialogue
-   */
   type: text("type").notNull(),
   order: integer("order").notNull(),
+  title: text("title"),
+  titleAr: text("title_ar"),
+  /** Student-facing instructions for this block */
+  instructions: text("instructions"),
+  instructionsAr: text("instructions_ar"),
+  /** Primary text content (reading, explanation, etc.) */
   content: text("content"),
   contentAr: text("content_ar"),
   audioNote: text("audio_note"),
   prompt: text("prompt"),
   promptAr: text("prompt_ar"),
   exampleAudio: text("example_audio"),
+  /** Whether this block must be completed for lesson progression */
+  isRequired: boolean("is_required").notNull().default(true),
+  /** Estimated time for this block in minutes */
+  estimatedMinutes: integer("estimated_minutes"),
+  isActive: boolean("is_active").notNull().default(true),
+  /** Flexible block-type-specific configuration */
+  config: jsonb("config"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
 
 export type ContentBlock = typeof contentBlocksTable.$inferSelect;
@@ -97,12 +106,34 @@ export const exercisesTable = pgTable("exercises", {
   id: serial("id").primaryKey(),
   lessonId: integer("lesson_id").notNull().references(() => lessonsTable.id, { onDelete: "cascade" }),
   contentBlockId: integer("content_block_id"),
+  /**
+   * Exercise type: mcq | speaking | pronunciation | open_ended | fill_blank | translation
+   * Stored as plain text so new types can be added without schema changes.
+   */
+  exerciseType: text("exercise_type").notNull().default("mcq"),
   question: text("question").notNull(),
   questionAr: text("question_ar"),
-  correctOptionId: text("correct_option_id").notNull(),
+  /** For MCQ: the ID of the correct option */
+  correctOptionId: text("correct_option_id").notNull().default(""),
   explanation: text("explanation"),
   explanationAr: text("explanation_ar"),
+  /** For speaking/pronunciation: the spoken prompt */
+  prompt: text("prompt"),
+  promptAr: text("prompt_ar"),
+  /** Custom instructions beyond the default */
+  instructionsText: text("instructions_text"),
+  instructionsAr: text("instructions_ar"),
+  /** Model answer for open-ended or speaking exercises */
+  modelAnswer: text("model_answer"),
+  modelAnswerAr: text("model_answer_ar"),
+  /** Comma-separated key concepts the AI/reviewer expects in the response */
+  expectedConcepts: text("expected_concepts"),
+  difficulty: text("difficulty"),
+  points: integer("points").default(10),
+  ordering: integer("ordering").default(0),
+  audioUrl: text("audio_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
 
 export type Exercise = typeof exercisesTable.$inferSelect;
@@ -110,7 +141,7 @@ export type Exercise = typeof exercisesTable.$inferSelect;
 export const exerciseOptionsTable = pgTable("exercise_options", {
   id: serial("id").primaryKey(),
   exerciseId: integer("exercise_id").notNull().references(() => exercisesTable.id, { onDelete: "cascade" }),
-  optionId: text("option_id").notNull(), // 'a', 'b', 'c', 'd'
+  optionId: text("option_id").notNull(),
   text: text("text").notNull(),
   textAr: text("text_ar"),
 });
@@ -123,11 +154,18 @@ export const vocabularyTable = pgTable("vocabulary", {
   lessonId: integer("lesson_id").references(() => lessonsTable.id),
   word: text("word").notNull(),
   translation: text("translation").notNull(),
+  definition: text("definition"),
+  partOfSpeech: text("part_of_speech"),
   exampleSentence: text("example_sentence"),
   exampleSentenceAr: text("example_sentence_ar"),
   pronunciation: text("pronunciation"),
   audioNote: text("audio_note"),
+  difficulty: text("difficulty"),
+  tags: text("tags").array(),
+  /** Soft-delete timestamp */
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
 
 export type Vocabulary = typeof vocabularyTable.$inferSelect;

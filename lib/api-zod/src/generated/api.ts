@@ -39,7 +39,7 @@ export const RegisterResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "role": zod.enum(['student', 'admin']),
+  "role": zod.enum(['student', 'admin', 'content_manager', 'content_reviewer']),
   "preferredLanguage": zod.enum(['ar', 'en']).optional(),
   "country": zod.string().optional(),
   "createdAt": zod.coerce.date()
@@ -60,7 +60,7 @@ export const LoginResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "role": zod.enum(['student', 'admin']),
+  "role": zod.enum(['student', 'admin', 'content_manager', 'content_reviewer']),
   "preferredLanguage": zod.enum(['ar', 'en']).optional(),
   "country": zod.string().optional(),
   "createdAt": zod.coerce.date()
@@ -83,7 +83,7 @@ export const GetMeResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "role": zod.enum(['student', 'admin']),
+  "role": zod.enum(['student', 'admin', 'content_manager', 'content_reviewer']),
   "preferredLanguage": zod.enum(['ar', 'en']).optional(),
   "country": zod.string().optional(),
   "createdAt": zod.coerce.date()
@@ -637,7 +637,7 @@ export const GetAdminStudentsResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "role": zod.enum(['student', 'admin']),
+  "role": zod.enum(['student', 'admin', 'content_manager', 'content_reviewer']),
   "preferredLanguage": zod.enum(['ar', 'en']).optional(),
   "country": zod.string().optional(),
   "createdAt": zod.coerce.date()

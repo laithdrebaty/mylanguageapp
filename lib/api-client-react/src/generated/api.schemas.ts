@@ -74,6 +74,8 @@ export type UserRole = typeof UserRole[keyof typeof UserRole];
 export const UserRole = {
   student: 'student',
   admin: 'admin',
+  content_manager: 'content_manager',
+  content_reviewer: 'content_reviewer',
 } as const;
 
 export type UserPreferredLanguage = typeof UserPreferredLanguage[keyof typeof UserPreferredLanguage];

@@ -90,6 +90,7 @@ router.post("/admin/lessons", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
 
+  const publishFlag = isPublished ?? false;
   const [lesson] = await db.insert(lessonsTable).values({
     levelId,
     title,
@@ -99,7 +100,8 @@ router.post("/admin/lessons", requireAdmin, async (req, res): Promise<void> => {
     order,
     lessonType,
     estimatedMinutes: estimatedMinutes ?? 35,
-    isPublished: isPublished ?? false,
+    isPublished: publishFlag,
+    status: publishFlag ? "published" : "draft",
     xpReward: xpReward ?? 50,
     passingScore: passingScore ?? 75,
   }).returning();
@@ -137,6 +139,10 @@ router.patch("/admin/lessons/:lessonId", requireAdmin, async (req, res): Promise
   const update: Record<string, unknown> = {};
   for (const f of allowed) {
     if (req.body[f] !== undefined) update[f] = req.body[f];
+  }
+  // Keep status in sync with isPublished so both sources of truth agree
+  if (req.body.isPublished !== undefined) {
+    update.status = req.body.isPublished ? "published" : "draft";
   }
 
   const [lesson] = await db.update(lessonsTable).set(update).where(eq(lessonsTable.id, lessonId)).returning();

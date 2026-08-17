@@ -6,7 +6,7 @@ import pinoHttp from "pino-http";
 import helmet from "helmet";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
+import { RedisStore, type SendCommandFn } from "rate-limit-redis";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
@@ -99,8 +99,8 @@ function makeRedisStore(prefix: string): RedisStore | undefined {
   return new RedisStore({
     prefix,
     // ioredis call() is the raw Redis command interface
-    sendCommand: (...args: string[]) =>
-      (redis as InstanceType<typeof import("ioredis").default>).call(args[0], ...args.slice(1)) as Promise<unknown>,
+    sendCommand: ((...args: string[]) =>
+      (redis as InstanceType<typeof import("ioredis").default>).call(args[0], ...args.slice(1))) as SendCommandFn,
   });
 }
 

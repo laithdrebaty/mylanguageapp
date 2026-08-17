@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, sql, isNull } from "drizzle-orm";
 import {
   db, lessonsTable, levelsTable, contentBlocksTable, exercisesTable, exerciseOptionsTable,
   lessonProgressTable, vocabularyTable, studentProfilesTable,
@@ -21,8 +21,8 @@ router.get("/lessons", async (req, res): Promise<void> => {
   const userId = req.session?.userId;
 
   const where = levelId
-    ? and(eq(lessonsTable.levelId, levelId), eq(lessonsTable.isPublished, true))
-    : eq(lessonsTable.isPublished, true);
+    ? and(eq(lessonsTable.levelId, levelId), eq(lessonsTable.status, "published"), isNull(lessonsTable.softDeletedAt))
+    : and(eq(lessonsTable.status, "published"), isNull(lessonsTable.softDeletedAt));
 
   const [lessons, completedIds] = await Promise.all([
     db.select().from(lessonsTable).where(where).orderBy(asc(lessonsTable.order)),
@@ -41,7 +41,7 @@ router.get("/lessons", async (req, res): Promise<void> => {
     })(),
     userId
       ? db.select().from(lessonProgressTable).where(eq(lessonProgressTable.userId, userId))
-      : Promise.resolve([]),
+      : Promise.resolve([] as (typeof lessonProgressTable.$inferSelect)[]),
   ]);
 
   const currentLevelId = profile?.currentLevelId ?? null;
@@ -110,7 +110,9 @@ interface LessonContentBundle {
 }
 
 async function loadLessonContent(lessonId: number): Promise<LessonContentBundle | null> {
-  const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, lessonId)).limit(1);
+  const [lesson] = await db.select().from(lessonsTable)
+    .where(and(eq(lessonsTable.id, lessonId), eq(lessonsTable.status, "published"), isNull(lessonsTable.softDeletedAt)))
+    .limit(1);
   if (!lesson) return null;
 
   const [level, blocks, exercises, vocab] = await Promise.all([
@@ -268,6 +270,12 @@ router.post("/lessons/:lessonId/start", requireAuth, async (req, res): Promise<v
 
   if (isNaN(lessonId)) { res.status(400).json({ error: "Invalid lesson ID" }); return; }
 
+  // Enforce student can only start published, non-deleted lessons
+  const [lessonRow] = await db.select({ id: lessonsTable.id }).from(lessonsTable)
+    .where(and(eq(lessonsTable.id, lessonId), eq(lessonsTable.status, "published"), isNull(lessonsTable.softDeletedAt)))
+    .limit(1);
+  if (!lessonRow) { res.status(404).json({ error: "Lesson not found" }); return; }
+
   const [existing] = await db.select().from(lessonProgressTable)
     .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.lessonId, lessonId)))
     .limit(1);
@@ -309,7 +317,9 @@ router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promis
     return;
   }
 
-  const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, lessonId)).limit(1);
+  const [lesson] = await db.select().from(lessonsTable)
+    .where(and(eq(lessonsTable.id, lessonId), eq(lessonsTable.status, "published"), isNull(lessonsTable.softDeletedAt)))
+    .limit(1);
   if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
 
   const passed = score >= lesson.passingScore;

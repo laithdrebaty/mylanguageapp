@@ -882,7 +882,7 @@ components:
           type: string
         role:
           type: string
-          enum: [student, admin]
+          enum: [student, admin, content_manager, content_reviewer]
         preferredLanguage:
           type: string
           enum: [ar, en]
