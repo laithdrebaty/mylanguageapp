@@ -380,16 +380,25 @@ router.post("/cms/lessons/:id/restore", requireAdmin, async (req, res): Promise<
   res.json({ id, status: "draft" });
 });
 
-/** Admin soft-deletes */
-router.delete("/cms/lessons/:id", requireAdmin, async (req, res): Promise<void> => {
+/** Soft-delete a lesson.
+ * Admin: can delete any lesson at any status.
+ * Content manager: can only delete lessons in draft or in_review (not published/archived).
+ */
+router.delete("/cms/lessons/:id", requireContentManager, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid lesson ID" }); return; }
   const [lesson] = await db.select().from(lessonsTable).where(eq(lessonsTable.id, id)).limit(1);
-  if (!lesson) { res.status(404).json({ error: "Lesson not found" }); return; }
+  if (!lesson || lesson.softDeletedAt) { res.status(404).json({ error: "Lesson not found" }); return; }
+
+  // content_manager may only delete non-published lessons
+  if (req.session.role !== "admin" && ["published", "archived"].includes(lesson.status)) {
+    res.status(403).json({ error: `Cannot delete a ${lesson.status} lesson. Ask an admin.` }); return;
+  }
+
   await db.update(lessonsTable).set({ softDeletedAt: new Date(), isPublished: false, status: "archived" }).where(eq(lessonsTable.id, id));
-  await audit(req.session.userId!, "delete", "lesson", id, lesson.status, null);
+  await audit(req.session.userId!, "delete", "lesson", id, lesson.status, "archived");
   await Promise.all([invalidate(CK.lessonContent(id)), invalidatePrefix("v1:levels:c:")]);
-  res.json({ id, deleted: true });
+  res.json({ id, deleted: true, archived: true });
 });
 
 // ─── Duplicate ─────────────────────────────────────────────────────────────
