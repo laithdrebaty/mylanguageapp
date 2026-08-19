@@ -1,0 +1,342 @@
+ASCENSION / لغتي
+PRIORITY 3 — CORE STUDENT LEARNING ENGINE
+
+We have completed Priority 1 (architecture) and Priority 2 (CMS), and the CMS has been tested through real HTTP/API requests.
+
+Now implement the core student learning loop.
+
+IMPORTANT:
+DO NOT generate, invent, or populate educational curriculum.
+
+The curriculum will be created by the owner, who is an English-language tutor.
+
+Use the existing CMS content only for testing.
+
+Do NOT create hundreds of lessons.
+Do NOT use AI to generate lessons, vocabulary, texts, questions, or curriculum.
+
+Your job is to build the technical learning engine that delivers curriculum created through the CMS.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+A real student must be able to:
+
+1. Register/login
+2. Take the placement test
+3. Receive an appropriate starting level
+4. See their level and progress on the dashboard
+5. Open an available lesson
+6. Complete the lesson content
+7. Answer questions
+8. Complete required activities
+9. Receive results/feedback
+10. Have progress saved
+11. Complete the lesson
+12. Unlock the next eligible lesson
+13. Return later and review previous lessons
+
+This end-to-end flow is the main objective of Priority 3.
+
+==================================================
+1. STUDENT DASHBOARD
+==================================================
+
+Complete the student dashboard so it displays:
+
+- Current curriculum
+- Current level
+- Overall progress
+- Current/next lesson
+- Completed lessons
+- Available lessons
+- Locked lessons
+- Recent activity
+
+The dashboard must use real backend data.
+
+Do not hard-code progress.
+
+==================================================
+2. PLACEMENT TEST
+==================================================
+
+Connect the existing placement-test functionality to the student learning flow.
+
+The student must be able to:
+
+Placement Test
+→ Submit answers
+→ Receive score
+→ Receive recommended starting level
+→ Store the result
+→ Begin the appropriate curriculum
+
+The level assignment must be data-driven.
+
+Do not hard-code the system so that only English or CEFR levels can work.
+
+The current curriculum is Arabic → English, but future languages may use completely different level systems.
+
+==================================================
+3. LESSON ENGINE
+==================================================
+
+Build the student lesson player using the CMS content dynamically.
+
+Do NOT hard-code individual lessons.
+
+The engine must retrieve and render the lesson's configured content blocks in their configured order.
+
+Support the content types already implemented in the CMS:
+
+- Reading
+- Vocabulary
+- MCQ/exercise
+- Speaking
+- Pronunciation
+- Open-ended
+
+The student should see the lesson exactly according to the structure created by the content manager.
+
+==================================================
+4. READING + AUDIO
+==================================================
+
+Reading:
+
+- Display lesson text
+- Support configured translations
+- Display associated vocabulary where provided
+
+Audio:
+
+- Play prerecorded audio associated with the content
+- Pause/resume
+- Mobile-friendly controls
+
+Do NOT generate lesson audio automatically.
+
+The owner will provide the recordings through the CMS.
+
+Do not store large audio files in PostgreSQL or Redis.
+
+==================================================
+5. QUESTIONS AND ACTIVITIES
+==================================================
+
+MCQ:
+
+- Student selects an answer
+- Submits
+- Backend determines correctness
+- Score is calculated server-side
+- Configured explanation/feedback is displayed
+
+Do not trust scores supplied by the frontend.
+
+Open-ended:
+
+- Student submits response
+- Response is saved
+- Completion is tracked
+- Prepare the interface for future AI evaluation
+
+Speaking/pronunciation:
+
+- Display prompt
+- Allow microphone recording
+- Allow submission
+
+For now, do NOT implement sophisticated AI speech evaluation.
+
+Create the clean service/API boundary needed for Priority 4.
+
+Do not pretend to provide AI scoring if it has not actually been implemented.
+
+==================================================
+6. REQUIRED / OPTIONAL ACTIVITIES
+==================================================
+
+Respect the CMS configuration.
+
+Required activities must be completed according to the lesson's configured rules.
+
+Optional activities must not unnecessarily prevent lesson completion.
+
+Do not hard-code one completion rule for every lesson.
+
+==================================================
+7. PROGRESS + UNLOCKING
+==================================================
+
+Track:
+
+- Student
+- Curriculum
+- Level
+- Lesson
+- Completion status
+- Score
+- Attempts
+- Last activity
+- Completion timestamp
+
+Lesson states should include at least:
+
+LOCKED
+AVAILABLE
+IN_PROGRESS
+COMPLETED
+
+The backend must enforce progression.
+
+A student must not be able to manipulate an API request to:
+
+- Change their level
+- Change their score
+- Mark a lesson complete
+- Unlock restricted lessons
+
+Students must be able to revisit completed lessons without destroying their original completion history.
+
+==================================================
+8. LESSON COMPLETION
+==================================================
+
+When a student satisfies the configured lesson completion requirements:
+
+- Mark lesson completed
+- Save result
+- Update progress
+- Unlock the next eligible lesson
+- Update dashboard
+
+Do not assume every curriculum must have strictly linear lessons.
+
+Respect prerequisites/configuration where supported by the CMS.
+
+==================================================
+9. MULTILINGUAL / EXTENSIBLE DESIGN
+==================================================
+
+Do not hard-code:
+
+- Arabic
+- English
+- CEFR
+- A1–C2
+- Fixed lesson duration
+
+The current content is Arabic → English.
+
+The architecture must remain capable of:
+
+- Additional languages
+- Different level systems
+- Different level structures
+- Different lesson durations
+- Different curricula
+
+Lesson duration must come from CMS data.
+
+==================================================
+10. AI COST CONTROL
+==================================================
+
+For Priority 3, minimize AI usage.
+
+Do NOT invoke AI for:
+
+- Generating lessons
+- Generating vocabulary
+- Generating questions
+- Rewriting curriculum
+- Basic MCQ grading
+- Basic deterministic feedback
+
+Use deterministic logic whenever possible.
+
+Prepare the architecture for controlled AI integration in Priority 4.
+
+==================================================
+11. SECURITY + PERFORMANCE
+==================================================
+
+All important learning decisions must be enforced server-side.
+
+Use:
+
+- Existing authentication
+- Existing authorization
+- PostgreSQL as source of truth
+- Redis where appropriate
+- Existing connection pooling/caching architecture
+- Efficient queries
+
+Do not load an entire curriculum when opening one lesson.
+
+The API must remain suitable for the future Android/iOS client.
+
+==================================================
+12. TESTING — MOST IMPORTANT
+==================================================
+
+Do actual end-to-end testing against the running application/API.
+
+Test one complete student journey:
+
+Student registration/login
+→ Placement test
+→ Level assignment
+→ Dashboard
+→ Lesson 1
+→ Reading
+→ Audio if available
+→ Vocabulary
+→ MCQ
+→ Speaking/pronunciation interface
+→ Open-ended response
+→ Required activities completed
+→ Lesson completion
+→ Progress saved
+→ Next lesson unlocked
+→ Previous lesson reviewed
+
+Also verify:
+
+- Student cannot manipulate scores
+- Student cannot bypass lesson requirements
+- Student cannot access unpublished content
+- Required/optional logic works
+- Progress survives logout/login
+- Existing CMS functionality still works
+
+Do not consider Priority 3 complete simply because the code compiles.
+
+==================================================
+FINAL REPORT
+==================================================
+
+When finished, report:
+
+1. What was implemented
+2. Database changes
+3. API changes
+4. Frontend changes
+5. Placement-test behavior
+6. Progression behavior
+7. Lesson completion behavior
+8. Speaking/pronunciation status
+9. AI calls made
+10. Tests actually performed
+11. PASS / PARTIAL / FAIL results
+12. Remaining limitations
+13. Recommended next priority
+
+Do not implement unrelated features.
+
+Do not generate curriculum.
+
+Focus entirely on making the complete student learning loop work.
