@@ -1,22 +1,30 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
-import { useGetPlacementTest, useSubmitPlacementTest } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetPlacementTest,
+  useSubmitPlacementTest,
+  getGetDashboardQueryKey,
+  getGetLevelsQueryKey,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { PlacementTestResult } from "@workspace/api-client-react";
 
 export default function Placement() {
   const { data: test, isLoading, error } = useGetPlacementTest();
   const submitTest = useSubmitPlacementTest();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<PlacementTestResult | null>(null);
 
   if (isLoading) {
     return (
@@ -45,24 +53,46 @@ export default function Placement() {
               <CheckCircle2 className="h-10 w-10 text-primary" />
             </div>
             <h2 className="text-3xl font-bold text-foreground">تم تحديد مستواك بنجاح!</h2>
-            
-            <div className="p-6 bg-secondary rounded-2xl">
+
+            <div className="p-6 bg-secondary rounded-2xl space-y-2">
               <p className="text-muted-foreground mb-2">المستوى الخاص بك هو</p>
-              <div className="text-4xl font-bold text-primary mb-2" dir="ltr">{result.assignedLevelCode}</div>
+              <div className="text-4xl font-bold text-primary" dir="ltr">{result.assignedLevelCode}</div>
               <div className="text-xl font-bold text-foreground">{result.assignedLevelNameAr}</div>
+              <div className="text-sm text-muted-foreground" dir="ltr">{result.assignedLevelName}</div>
             </div>
 
             <p className="text-muted-foreground text-sm">
-              بناءً على نتيجة {result.percentage}% في اختبار تحديد المستوى.
+              بناءً على نتيجة {result.score} من {result.total} ({result.percentage}%) في اختبار تحديد المستوى.
             </p>
 
-            <Button 
-              size="lg" 
+            {result.messageAr && (
+              <p className="text-sm font-medium text-foreground bg-secondary/60 p-3 rounded-lg">
+                {result.messageAr}
+              </p>
+            )}
+
+            <Button
+              size="lg"
               className="w-full h-14 text-lg rounded-xl mt-4"
               onClick={() => setLocation("/dashboard")}
             >
               الانتقال للرئيسية
             </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Zero questions edge case
+  if (test.questions.length === 0) {
+    return (
+      <div dir="rtl" className="min-h-[100dvh] flex items-center justify-center p-4 bg-background">
+        <Card className="max-w-xl w-full border-border shadow-lg">
+          <CardContent className="p-8 text-center space-y-6">
+            <h1 className="text-2xl font-bold text-foreground">الاختبار غير متاح</h1>
+            <p className="text-muted-foreground">لا توجد أسئلة في الاختبار حالياً. يرجى المحاولة لاحقاً.</p>
+            <Button onClick={() => setLocation("/dashboard")}>العودة للرئيسية</Button>
           </CardContent>
         </Card>
       </div>
@@ -79,14 +109,14 @@ export default function Placement() {
             </div>
             <h1 className="text-3xl font-bold text-foreground">اختبار تحديد المستوى</h1>
             <p className="text-muted-foreground text-lg leading-relaxed">
-              لمعرفة من أين يجب أن تبدأ رحلتك معنا، قمنا بإعداد هذا الاختبار القصير. 
-              الاختبار يتكون من {test.questions.length} أسئلة سريعة.
+              لمعرفة من أين يجب أن تبدأ رحلتك معنا، قمنا بإعداد هذا الاختبار القصير.
+              الاختبار يتكون من {test.questions.length} سؤال.
             </p>
             <p className="text-sm text-amber-600 font-medium bg-amber-50 p-3 rounded-lg">
               ملاحظة: إذا كنت لا تعرف الإجابة، يفضل تخطي السؤال لكي يتم تحديد مستواك بدقة بدلاً من التخمين.
             </p>
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               className="w-full h-14 text-lg rounded-xl mt-4 bg-primary hover:bg-primary/90"
               onClick={() => setStarted(true)}
             >
@@ -106,6 +136,35 @@ export default function Placement() {
     setAnswers(prev => ({ ...prev, [question.id]: optionId }));
   };
 
+  const handleSubmit = () => {
+    const formattedAnswers = Object.entries(answers)
+      .map(([qId, oId]) => ({
+        questionId: parseInt(qId, 10),
+        selectedOptionId: oId,
+      }));
+
+    submitTest.mutate(
+      { data: { answers: formattedAnswers } },
+      {
+        onSuccess: async (data) => {
+          // Invalidate dashboard and levels before navigating
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetLevelsQueryKey() }),
+          ]);
+          setResult(data);
+        },
+        onError: () => {
+          toast({
+            variant: "destructive",
+            title: "حدث خطأ",
+            description: "لم نتمكن من إرسال إجاباتك، يرجى المحاولة مرة أخرى.",
+          });
+        }
+      }
+    );
+  };
+
   const handleNext = () => {
     if (isLast) {
       handleSubmit();
@@ -120,29 +179,6 @@ export default function Placement() {
     } else {
       setCurrentIndex(prev => prev + 1);
     }
-  };
-
-  const handleSubmit = () => {
-    const formattedAnswers = Object.entries(answers).map(([qId, oId]) => ({
-      questionId: parseInt(qId, 10),
-      selectedOptionId: oId
-    }));
-
-    submitTest.mutate(
-      { data: { answers: formattedAnswers } },
-      {
-        onSuccess: (data) => {
-          setResult(data);
-        },
-        onError: () => {
-          toast({
-            variant: "destructive",
-            title: "حدث خطأ",
-            description: "لم نتمكن من إرسال إجاباتك، يرجى المحاولة مرة أخرى.",
-          });
-        }
-      }
-    );
   };
 
   return (
@@ -193,8 +229,8 @@ export default function Placement() {
 
       {/* Controls */}
       <div className="flex justify-between items-center mt-4">
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           onClick={handleSkip}
           className="text-muted-foreground"
           disabled={submitTest.isPending}
@@ -202,7 +238,7 @@ export default function Placement() {
           لا أعرف الإجابة (تخطي)
         </Button>
 
-        <Button 
+        <Button
           onClick={handleNext}
           size="lg"
           className="h-12 px-8 rounded-xl"

@@ -5,6 +5,8 @@
  * Ascension / لغتي — Syrian-first English learning platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { Curriculum } from './curriculum';
+import type { DashboardStatsLessonStateCounts } from './dashboardStatsLessonStateCounts';
 import type { DashboardStatsRecentActivityItem } from './dashboardStatsRecentActivityItem';
 import type { DashboardStatsWeeklyProgress } from './dashboardStatsWeeklyProgress';
 import type { LessonSummary } from './lessonSummary';
@@ -13,11 +15,14 @@ import type { StudentProfile } from './studentProfile';
 
 export interface DashboardStats {
   student: StudentProfile;
-  currentLevel: Level;
-  nextLesson: LessonSummary;
-  totalLessonsCompleted?: number;
-  totalLessonsInLevel?: number;
-  levelProgressPercent?: number;
+  currentCurriculum: Curriculum | null;
+  currentLevel: Level | null;
+  nextLesson: LessonSummary | null;
+  totalLessonsCompleted: number;
+  totalLessonsInLevel: number;
+  levelProgressPercent: number;
+  lessonStateCounts: DashboardStatsLessonStateCounts;
+  lessons: LessonSummary[];
   weeklyProgress: DashboardStatsWeeklyProgress;
   recentActivity: DashboardStatsRecentActivityItem[];
 }

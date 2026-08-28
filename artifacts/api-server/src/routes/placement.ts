@@ -62,37 +62,86 @@ router.get("/placement-test", async (req, res): Promise<void> => {
 });
 
 router.post("/placement-test/submit", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.session.userId!;
+
+  // Reject retaking placement once completed (409)
+  const [profile] = await db
+    .select()
+    .from(studentProfilesTable)
+    .where(eq(studentProfilesTable.userId, userId))
+    .limit(1);
+
+  if (profile?.placementCompleted) {
+    res.status(409).json({ error: "Placement test already completed" });
+    return;
+  }
+
   const { answers } = req.body;
   if (!Array.isArray(answers) || answers.length === 0) {
     res.status(400).json({ error: "Answers array is required" });
     return;
   }
 
-  const questions = await db.select().from(placementQuestionsTable);
+  const questions = await db
+    .select()
+    .from(placementQuestionsTable)
+    .orderBy(asc(placementQuestionsTable.order));
   const allOptions = await db.select().from(placementOptionsTable);
 
-  let correct = 0;
-  for (const answer of answers) {
-    const option = allOptions.find(
-      (o) =>
-        o.questionId === answer.questionId &&
-        o.optionId === answer.selectedOptionId &&
-        o.isCorrect,
-    );
-    if (option) correct++;
+  // Validate: no duplicate question IDs in submitted answers
+  const submittedQuestionIds = answers.map((a: { questionId: unknown }) => a.questionId);
+  const uniqueSubmittedIds = new Set(submittedQuestionIds);
+  if (uniqueSubmittedIds.size !== submittedQuestionIds.length) {
+    res.status(400).json({ error: "Duplicate question IDs in answers" });
+    return;
   }
 
-  const total = questions.length || answers.length;
+  // Validate: all submitted question IDs must exist in the actual test
+  const validQuestionIds = new Set(questions.map((q) => q.id));
+  for (const qid of submittedQuestionIds) {
+    if (!validQuestionIds.has(qid as number)) {
+      res.status(400).json({ error: `Unknown question ID: ${qid}` });
+      return;
+    }
+  }
+
+  // Validate: no duplicate option selections for the same question
+  const optionsByQuestion = new Map<number, string>();
+  for (const answer of answers) {
+    const { questionId, selectedOptionId } = answer as { questionId: number; selectedOptionId: string };
+    if (!questionId || !selectedOptionId) {
+      res.status(400).json({ error: "Each answer must have questionId and selectedOptionId" });
+      return;
+    }
+    // Validate option belongs to the question (reject foreign options)
+    const validOptions = allOptions.filter(
+      (o) => o.questionId === questionId && o.optionId === selectedOptionId,
+    );
+    if (validOptions.length === 0) {
+      res.status(400).json({ error: `Invalid option '${selectedOptionId}' for question ${questionId}` });
+      return;
+    }
+    optionsByQuestion.set(questionId, selectedOptionId);
+  }
+
+  // Score: count answered questions correctly; unanswered questions count as incorrect
+  let correct = 0;
+  for (const question of questions) {
+    const selectedOptionId = optionsByQuestion.get(question.id);
+    if (!selectedOptionId) {
+      // Unanswered — counts as incorrect
+      continue;
+    }
+    const isCorrect = allOptions.some(
+      (o) => o.questionId === question.id && o.optionId === selectedOptionId && o.isCorrect,
+    );
+    if (isCorrect) correct++;
+  }
+
+  const total = questions.length;
   const percentage = total > 0 ? (correct / total) * 100 : 0;
 
   // Resolve the student's curriculum
-  const [profile] = await db
-    .select()
-    .from(studentProfilesTable)
-    .where(eq(studentProfilesTable.userId, req.session.userId!))
-    .limit(1);
-
-  // Fall back to the default curriculum if the student profile has none
   let curriculumId = profile?.curriculumId ?? null;
   if (!curriculumId) {
     const [defaultCurriculum] = await db
@@ -115,26 +164,36 @@ router.post("/placement-test/submit", requireAuth, async (req, res): Promise<voi
     return;
   }
 
-  // Save result
-  await db.insert(placementResultsTable).values({
-    userId: req.session.userId!,
-    curriculumId,
-    score: correct,
-    total,
-    percentage,
-    assignedLevelCode: level.code,
-    assignedLevelId: level.id,
-  });
-
-  // Update student profile with their assigned level and curriculum
-  await db
-    .update(studentProfilesTable)
-    .set({
-      currentLevelId: level.id,
+  // Save result and update profile transactionally
+  await db.transaction(async (tx) => {
+    await tx.insert(placementResultsTable).values({
+      userId,
       curriculumId,
-      placementCompleted: true,
-    })
-    .where(eq(studentProfilesTable.userId, req.session.userId!));
+      score: correct,
+      total,
+      percentage,
+      assignedLevelCode: level.code,
+      assignedLevelId: level.id,
+    });
+
+    if (profile) {
+      await tx
+        .update(studentProfilesTable)
+        .set({
+          currentLevelId: level.id,
+          curriculumId,
+          placementCompleted: true,
+        })
+        .where(eq(studentProfilesTable.userId, userId));
+    } else {
+      await tx.insert(studentProfilesTable).values({
+        userId,
+        currentLevelId: level.id,
+        curriculumId,
+        placementCompleted: true,
+      });
+    }
+  });
 
   res.json({
     score: correct,

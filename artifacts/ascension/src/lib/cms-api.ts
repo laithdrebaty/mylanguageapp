@@ -1,7 +1,7 @@
 /**
  * CMS API utilities
  * Typed fetch wrappers for all CMS endpoints.
- * Uses the Vite BASE_URL so paths work in the Replit proxy environment.
+ * Uses the Vite BASE_URL so paths work when the app is served under a sub-path.
  */
 
 const base = () => `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;

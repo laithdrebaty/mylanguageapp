@@ -8,7 +8,6 @@
 
 export interface ExerciseResult {
   correct: boolean;
-  correctOptionId: string;
   /** @nullable */
   explanation: string | null;
   /** @nullable */

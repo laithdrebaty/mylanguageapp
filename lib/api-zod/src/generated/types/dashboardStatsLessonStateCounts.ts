@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface LessonCompletionInput {
-  timeSpentSeconds?: number;
-}
+export type DashboardStatsLessonStateCounts = {
+  locked: number;
+  available: number;
+  inProgress: number;
+  completed: number;
+};

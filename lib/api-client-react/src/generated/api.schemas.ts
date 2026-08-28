@@ -186,17 +186,18 @@ export interface PlacementTestSubmission {
 
 export interface PlacementTestResult {
   score: number;
-  total?: number;
+  total: number;
   percentage: number;
   assignedLevelCode: string;
   assignedLevelName: string;
-  assignedLevelNameAr?: string;
-  message?: string;
-  messageAr?: string;
+  assignedLevelNameAr: string;
+  message: string;
+  messageAr: string;
 }
 
 export interface Level {
   id: number;
+  curriculumId: number;
   code: string;
   name: string;
   nameAr: string;
@@ -206,9 +207,9 @@ export interface Level {
   descriptionAr?: string | null;
   order: number;
   totalLessons: number;
-  completedLessons?: number;
+  completedLessons: number;
   isUnlocked: boolean;
-  isCompleted?: boolean;
+  isCompleted: boolean;
 }
 
 export type LessonSummaryLessonType = typeof LessonSummaryLessonType[keyof typeof LessonSummaryLessonType];
@@ -224,10 +225,20 @@ export const LessonSummaryLessonType = {
   conversation: 'conversation',
 } as const;
 
+export type LessonSummaryState = typeof LessonSummaryState[keyof typeof LessonSummaryState];
+
+
+export const LessonSummaryState = {
+  LOCKED: 'LOCKED',
+  AVAILABLE: 'AVAILABLE',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+} as const;
+
 export interface LessonSummary {
   id: number;
   levelId: number;
-  levelCode?: string;
+  levelCode: string;
   title: string;
   titleAr: string;
   /** @nullable */
@@ -237,15 +248,17 @@ export interface LessonSummary {
   order: number;
   lessonType: LessonSummaryLessonType;
   estimatedMinutes: number;
+  state: LessonSummaryState;
   isUnlocked: boolean;
   isCompleted: boolean;
   /** @nullable */
-  bestScore?: number | null;
-  xpReward?: number;
+  bestScore: number | null;
+  xpReward: number;
 }
 
 export interface LevelDetail {
   id: number;
+  curriculumId: number;
   code: string;
   name: string;
   nameAr: string;
@@ -255,9 +268,9 @@ export interface LevelDetail {
   descriptionAr?: string | null;
   order: number;
   totalLessons: number;
-  completedLessons?: number;
+  completedLessons: number;
   isUnlocked: boolean;
-  isCompleted?: boolean;
+  isCompleted: boolean;
   lessons: LessonSummary[];
 }
 
@@ -266,12 +279,16 @@ export type ContentBlockType = typeof ContentBlockType[keyof typeof ContentBlock
 
 export const ContentBlockType = {
   text: 'text',
-  audio_placeholder: 'audio_placeholder',
   vocabulary_list: 'vocabulary_list',
   mcq: 'mcq',
   speaking_prompt: 'speaking_prompt',
   pronunciation_guide: 'pronunciation_guide',
+  audio_placeholder: 'audio_placeholder',
+  open_ended: 'open_ended',
   dialogue: 'dialogue',
+  explanation: 'explanation',
+  spelling: 'spelling',
+  review: 'review',
 } as const;
 
 export type ContentBlockOptionsItem = {
@@ -303,15 +320,31 @@ export interface ContentBlock {
   type: ContentBlockType;
   order: number;
   /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  titleAr?: string | null;
+  /** @nullable */
+  instructions?: string | null;
+  /** @nullable */
+  instructionsAr?: string | null;
+  isRequired: boolean;
+  isCompleted: boolean;
+  /** @nullable */
+  estimatedMinutes?: number | null;
+  /** @nullable */
   content?: string | null;
   /** @nullable */
   contentAr?: string | null;
   /** @nullable */
   audioNote?: string | null;
   /** @nullable */
+  audioUrl?: string | null;
+  /** @nullable */
   vocabularyItems?: VocabularyItem[] | null;
   /** @nullable */
   exerciseId?: number | null;
+  /** @nullable */
+  exerciseType?: string | null;
   /** @nullable */
   question?: string | null;
   /** @nullable */
@@ -339,10 +372,19 @@ export const LessonDetailLessonType = {
   conversation: 'conversation',
 } as const;
 
+export type LessonDetailState = typeof LessonDetailState[keyof typeof LessonDetailState];
+
+
+export const LessonDetailState = {
+  AVAILABLE: 'AVAILABLE',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+} as const;
+
 export interface LessonDetail {
   id: number;
   levelId: number;
-  levelCode?: string;
+  levelCode: string;
   title: string;
   titleAr: string;
   /** @nullable */
@@ -352,13 +394,15 @@ export interface LessonDetail {
   order: number;
   lessonType: LessonDetailLessonType;
   estimatedMinutes: number;
+  state: LessonDetailState;
   isUnlocked: boolean;
-  isCompleted?: boolean;
+  isCompleted: boolean;
   /** @nullable */
-  bestScore?: number | null;
-  xpReward?: number;
-  passingScore?: number;
+  bestScore: number | null;
+  xpReward: number;
+  passingScore: number;
   contentBlocks: ContentBlock[];
+  completedBlockIds: number[];
   /** @nullable */
   objectives?: string[] | null;
   /** @nullable */
@@ -366,11 +410,6 @@ export interface LessonDetail {
 }
 
 export interface LessonCompletionInput {
-  score: number;
-  totalQuestions: number;
-  correctAnswers: number;
-  /** @nullable */
-  speakingScore?: number | null;
   timeSpentSeconds?: number;
 }
 
@@ -388,20 +427,63 @@ export const LessonProgressStatus = {
 export interface LessonProgress {
   id: number;
   lessonId: number;
-  studentId: number;
+  userId: number;
   status: LessonProgressStatus;
   /** @nullable */
   bestScore?: number | null;
   /** @nullable */
   lastScore?: number | null;
   attempts: number;
-  passed?: boolean;
+  passed: boolean;
   /** @nullable */
   completedAt?: string | null;
   /** @nullable */
   startedAt?: string | null;
-  xpEarned?: number;
-  nextLessonUnlocked?: boolean;
+  xpEarned: number;
+  nextLessonUnlocked: boolean;
+  /** @nullable */
+  nextLessonId?: number | null;
+  missingRequiredBlockIds?: number[];
+  timeSpentSeconds?: number;
+}
+
+export interface LessonCompletionError {
+  error: string;
+  missingRequiredBlockIds: number[];
+}
+
+export interface LessonActivitySubmission {
+  /** @minLength 1 */
+  clientSubmissionId: string;
+  selectedOptionId?: string;
+  responseText?: string;
+  mediaReference?: string;
+  recordingDurationSeconds?: number;
+  timeSpentSeconds?: number;
+}
+
+export type LessonActivityResultEvaluationStatus = typeof LessonActivityResultEvaluationStatus[keyof typeof LessonActivityResultEvaluationStatus];
+
+
+export const LessonActivityResultEvaluationStatus = {
+  not_required: 'not_required',
+  pending: 'pending',
+  completed: 'completed',
+} as const;
+
+export interface LessonActivityResult {
+  attemptId: number;
+  blockId: number;
+  completed: boolean;
+  /** @nullable */
+  correct: boolean | null;
+  /** @nullable */
+  score: number | null;
+  /** @nullable */
+  explanation: string | null;
+  /** @nullable */
+  explanationAr: string | null;
+  evaluationStatus: LessonActivityResultEvaluationStatus;
 }
 
 export interface ExerciseSubmission {
@@ -410,7 +492,6 @@ export interface ExerciseSubmission {
 
 export interface ExerciseResult {
   correct: boolean;
-  correctOptionId: string;
   /** @nullable */
   explanation: string | null;
   /** @nullable */
@@ -511,6 +592,13 @@ export interface StudentSubscription {
   paymentNote?: string | null;
 }
 
+export type DashboardStatsLessonStateCounts = {
+  locked: number;
+  available: number;
+  inProgress: number;
+  completed: number;
+};
+
 export type DashboardStatsWeeklyProgress = {
   lessonsThisWeek: number;
   xpThisWeek: number;
@@ -528,11 +616,14 @@ export type DashboardStatsRecentActivityItem = {
 
 export interface DashboardStats {
   student: StudentProfile;
-  currentLevel: Level;
-  nextLesson: LessonSummary;
-  totalLessonsCompleted?: number;
-  totalLessonsInLevel?: number;
-  levelProgressPercent?: number;
+  currentCurriculum: Curriculum | null;
+  currentLevel: Level | null;
+  nextLesson: LessonSummary | null;
+  totalLessonsCompleted: number;
+  totalLessonsInLevel: number;
+  levelProgressPercent: number;
+  lessonStateCounts: DashboardStatsLessonStateCounts;
+  lessons: LessonSummary[];
   weeklyProgress: DashboardStatsWeeklyProgress;
   recentActivity: DashboardStatsRecentActivityItem[];
 }

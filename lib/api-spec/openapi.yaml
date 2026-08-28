@@ -343,11 +343,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /lessons/{lessonId}/blocks/{blockId}/submit:
+    post:
+      operationId: submitLessonActivity
+      tags: [lessons]
+      summary: Submit or complete one configured lesson activity
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonActivitySubmission"
+      responses:
+        "200":
+          description: Activity recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonActivityResult"
+        "400":
+          description: Invalid activity response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Lesson is locked or belongs to another curriculum
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Lesson or block not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /lessons/{lessonId}/complete:
     post:
       operationId: completeLesson
       tags: [lessons]
-      summary: Submit lesson completion with score
+      summary: Complete a lesson using server-verified activity results
       parameters:
         - name: lessonId
           in: path
@@ -373,6 +421,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Required lesson activities are incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonCompletionError"
 
   /lessons/{lessonId}/progress:
     get:
@@ -1015,7 +1069,7 @@ components:
 
     PlacementTestResult:
       type: object
-      required: [score, percentage, assignedLevelCode, assignedLevelName]
+      required: [score, total, percentage, assignedLevelCode, assignedLevelName, assignedLevelNameAr, message, messageAr]
       properties:
         score:
           type: number
@@ -1038,9 +1092,11 @@ components:
 
     Level:
       type: object
-      required: [id, code, name, nameAr, order, totalLessons, isUnlocked]
+      required: [id, curriculumId, code, name, nameAr, order, totalLessons, completedLessons, isUnlocked, isCompleted]
       properties:
         id:
+          type: number
+        curriculumId:
           type: number
         code:
           type: string
@@ -1065,9 +1121,11 @@ components:
 
     LevelDetail:
       type: object
-      required: [id, code, name, nameAr, order, totalLessons, isUnlocked, lessons]
+      required: [id, curriculumId, code, name, nameAr, order, totalLessons, completedLessons, isUnlocked, isCompleted, lessons]
       properties:
         id:
+          type: number
+        curriculumId:
           type: number
         code:
           type: string
@@ -1098,7 +1156,7 @@ components:
 
     LessonSummary:
       type: object
-      required: [id, levelId, title, titleAr, order, lessonType, estimatedMinutes, isUnlocked, isCompleted]
+      required: [id, levelId, levelCode, title, titleAr, order, lessonType, estimatedMinutes, state, isUnlocked, isCompleted, bestScore, xpReward]
       properties:
         id:
           type: number
@@ -1121,6 +1179,9 @@ components:
           enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
         estimatedMinutes:
           type: number
+        state:
+          type: string
+          enum: [LOCKED, AVAILABLE, IN_PROGRESS, COMPLETED]
         isUnlocked:
           type: boolean
         isCompleted:
@@ -1132,15 +1193,29 @@ components:
 
     ContentBlock:
       type: object
-      required: [id, type, order]
+      required: [id, type, order, isRequired, isCompleted]
       properties:
         id:
           type: number
         type:
           type: string
-          enum: [text, audio_placeholder, vocabulary_list, mcq, speaking_prompt, pronunciation_guide, dialogue]
+          enum: [text, vocabulary_list, mcq, speaking_prompt, pronunciation_guide, audio_placeholder, open_ended, dialogue, explanation, spelling, review]
         order:
           type: number
+        title:
+          type: ["string", "null"]
+        titleAr:
+          type: ["string", "null"]
+        instructions:
+          type: ["string", "null"]
+        instructionsAr:
+          type: ["string", "null"]
+        isRequired:
+          type: boolean
+        isCompleted:
+          type: boolean
+        estimatedMinutes:
+          type: ["number", "null"]
         # text block
         content:
           type: ["string", "null"]
@@ -1148,6 +1223,8 @@ components:
           type: ["string", "null"]
         # audio placeholder
         audioNote:
+          type: ["string", "null"]
+        audioUrl:
           type: ["string", "null"]
         # vocabulary list embedded ref
         vocabularyItems:
@@ -1157,6 +1234,8 @@ components:
         # mcq
         exerciseId:
           type: ["number", "null"]
+        exerciseType:
+          type: ["string", "null"]
         question:
           type: ["string", "null"]
         questionAr:
@@ -1183,7 +1262,7 @@ components:
 
     LessonDetail:
       type: object
-      required: [id, levelId, title, titleAr, order, lessonType, estimatedMinutes, isUnlocked, contentBlocks]
+      required: [id, levelId, levelCode, title, titleAr, order, lessonType, estimatedMinutes, state, isUnlocked, isCompleted, bestScore, xpReward, passingScore, contentBlocks, completedBlockIds]
       properties:
         id:
           type: number
@@ -1206,6 +1285,9 @@ components:
           enum: [general, reading, pronunciation, speaking, vocabulary, grammar, conversation]
         estimatedMinutes:
           type: number
+        state:
+          type: string
+          enum: [AVAILABLE, IN_PROGRESS, COMPLETED]
         isUnlocked:
           type: boolean
         isCompleted:
@@ -1220,6 +1302,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ContentBlock"
+        completedBlockIds:
+          type: array
+          items:
+            type: number
         objectives:
           type: ["array", "null"]
           items:
@@ -1231,28 +1317,19 @@ components:
 
     LessonCompletionInput:
       type: object
-      required: [score, totalQuestions, correctAnswers]
       properties:
-        score:
-          type: number
-        totalQuestions:
-          type: number
-        correctAnswers:
-          type: number
-        speakingScore:
-          type: ["number", "null"]
         timeSpentSeconds:
           type: number
 
     LessonProgress:
       type: object
-      required: [id, lessonId, studentId, status, attempts]
+      required: [id, lessonId, userId, status, attempts, passed, xpEarned, nextLessonUnlocked]
       properties:
         id:
           type: number
         lessonId:
           type: number
-        studentId:
+        userId:
           type: number
         status:
           type: string
@@ -1275,6 +1352,65 @@ components:
           type: number
         nextLessonUnlocked:
           type: boolean
+        nextLessonId:
+          type: ["number", "null"]
+        missingRequiredBlockIds:
+          type: array
+          items:
+            type: number
+        timeSpentSeconds:
+          type: number
+
+    LessonCompletionError:
+      type: object
+      required: [error, missingRequiredBlockIds]
+      properties:
+        error:
+          type: string
+        missingRequiredBlockIds:
+          type: array
+          items:
+            type: number
+
+    LessonActivitySubmission:
+      type: object
+      required: [clientSubmissionId]
+      properties:
+        clientSubmissionId:
+          type: string
+          minLength: 1
+        selectedOptionId:
+          type: string
+        responseText:
+          type: string
+        mediaReference:
+          type: string
+        recordingDurationSeconds:
+          type: number
+        timeSpentSeconds:
+          type: number
+
+    LessonActivityResult:
+      type: object
+      required: [attemptId, blockId, completed, correct, score, explanation, explanationAr, evaluationStatus]
+      properties:
+        attemptId:
+          type: number
+        blockId:
+          type: number
+        completed:
+          type: boolean
+        correct:
+          type: ["boolean", "null"]
+        score:
+          type: ["number", "null"]
+        explanation:
+          type: ["string", "null"]
+        explanationAr:
+          type: ["string", "null"]
+        evaluationStatus:
+          type: string
+          enum: [not_required, pending, completed]
 
     # ─── Exercises ─────────────────────────────────────────────────────────────
 
@@ -1287,12 +1423,10 @@ components:
 
     ExerciseResult:
       type: object
-      required: [correct, correctOptionId, explanation]
+      required: [correct, explanation]
       properties:
         correct:
           type: boolean
-        correctOptionId:
-          type: string
         explanation:
           type: ["string", "null"]
         explanationAr:
@@ -1408,20 +1542,44 @@ components:
 
     DashboardStats:
       type: object
-      required: [student, currentLevel, nextLesson, weeklyProgress, recentActivity]
+      required: [student, currentCurriculum, currentLevel, nextLesson, totalLessonsCompleted, totalLessonsInLevel, levelProgressPercent, lessonStateCounts, lessons, weeklyProgress, recentActivity]
       properties:
         student:
           $ref: "#/components/schemas/StudentProfile"
+        currentCurriculum:
+          anyOf:
+            - $ref: "#/components/schemas/Curriculum"
+            - type: "null"
         currentLevel:
-          $ref: "#/components/schemas/Level"
+          anyOf:
+            - $ref: "#/components/schemas/Level"
+            - type: "null"
         nextLesson:
-          $ref: "#/components/schemas/LessonSummary"
+          anyOf:
+            - $ref: "#/components/schemas/LessonSummary"
+            - type: "null"
         totalLessonsCompleted:
           type: number
         totalLessonsInLevel:
           type: number
         levelProgressPercent:
           type: number
+        lessonStateCounts:
+          type: object
+          required: [locked, available, inProgress, completed]
+          properties:
+            locked:
+              type: number
+            available:
+              type: number
+            inProgress:
+              type: number
+            completed:
+              type: number
+        lessons:
+          type: array
+          items:
+            $ref: "#/components/schemas/LessonSummary"
         weeklyProgress:
           type: object
           required: [lessonsThisWeek, xpThisWeek, streakDays]

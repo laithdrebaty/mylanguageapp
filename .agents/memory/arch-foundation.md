@@ -7,7 +7,7 @@ description: What was done in the architecture hardening pass — patterns to ke
 
 ### Security middleware order (app.ts)
 `trust proxy` → `helmet` → `compression` → `pino-http` → `cors` → `json/urlencoded` → `session` → rate limiters → routes → global error handler.
-`trust proxy = 1` is REQUIRED before rate-limit middleware — Replit runs behind a reverse proxy and X-Forwarded-For must be trusted.
+`trust proxy = 1` is REQUIRED before rate-limit middleware — the app runs behind a reverse proxy and X-Forwarded-For must be trusted.
 
 ### Rate limiting
 - 200 req/15min on all /api (general abuse protection)

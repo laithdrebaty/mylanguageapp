@@ -14,15 +14,31 @@ export interface ContentBlock {
   type: ContentBlockType;
   order: number;
   /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  titleAr?: string | null;
+  /** @nullable */
+  instructions?: string | null;
+  /** @nullable */
+  instructionsAr?: string | null;
+  isRequired: boolean;
+  isCompleted: boolean;
+  /** @nullable */
+  estimatedMinutes?: number | null;
+  /** @nullable */
   content?: string | null;
   /** @nullable */
   contentAr?: string | null;
   /** @nullable */
   audioNote?: string | null;
   /** @nullable */
+  audioUrl?: string | null;
+  /** @nullable */
   vocabularyItems?: VocabularyItem[] | null;
   /** @nullable */
   exerciseId?: number | null;
+  /** @nullable */
+  exerciseType?: string | null;
   /** @nullable */
   question?: string | null;
   /** @nullable */

@@ -6,7 +6,7 @@ description: drizzle-kit push blocks on TTY prompts when dropping/renaming colum
 ## Rule
 When schema changes involve dropping or renaming columns, or dropping unique constraints, use `executeSql` in CodeExecution to apply the DDL directly rather than `drizzle-kit push`.
 
-**Why:** `drizzle-kit push` raises interactive prompts (`promptColumnsConflicts`) that require a TTY. In the Replit shell environment, `process.stdin.isTTY` is false and the process errors out. The `--force` flag exists but does not suppress column-conflict prompts in drizzle-kit 0.31.x.
+**Why:** `drizzle-kit push` raises interactive prompts (`promptColumnsConflicts`) that require a TTY. In a non-interactive shell (CI, container entrypoint), `process.stdin.isTTY` is false and the process errors out. The `--force` flag exists but does not suppress column-conflict prompts in drizzle-kit 0.31.x.
 
 **How to apply:**
 1. Write the Drizzle TypeScript schema as normal (the source of truth for Drizzle ORM queries).

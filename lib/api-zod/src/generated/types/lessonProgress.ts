@@ -10,18 +10,22 @@ import type { LessonProgressStatus } from './lessonProgressStatus';
 export interface LessonProgress {
   id: number;
   lessonId: number;
-  studentId: number;
+  userId: number;
   status: LessonProgressStatus;
   /** @nullable */
   bestScore?: number | null;
   /** @nullable */
   lastScore?: number | null;
   attempts: number;
-  passed?: boolean;
+  passed: boolean;
   /** @nullable */
   completedAt?: Date | null;
   /** @nullable */
   startedAt?: Date | null;
-  xpEarned?: number;
-  nextLessonUnlocked?: boolean;
+  xpEarned: number;
+  nextLessonUnlocked: boolean;
+  /** @nullable */
+  nextLessonId?: number | null;
+  missingRequiredBlockIds?: number[];
+  timeSpentSeconds?: number;
 }

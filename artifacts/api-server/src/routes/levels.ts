@@ -1,17 +1,20 @@
 import { Router, type IRouter } from "express";
-import { eq, asc, and } from "drizzle-orm";
-import { db, levelsTable, lessonsTable, lessonProgressTable, studentProfilesTable, curriculaTable } from "@workspace/db";
+import { eq, asc, and, isNull } from "drizzle-orm";
+import {
+  db,
+  levelsTable,
+  lessonsTable,
+  lessonProgressTable,
+  studentProfilesTable,
+  curriculaTable,
+} from "@workspace/db";
+import {
+  getCompletedLessonIds,
+  deriveLessonStateWithOrders,
+  publishedLessonFilter,
+} from "../services/learning";
 
 const router: IRouter = Router();
-
-async function getCompletedLessonIds(userId: number | undefined): Promise<Set<number>> {
-  if (!userId) return new Set();
-  const rows = await db
-    .select({ lessonId: lessonProgressTable.lessonId })
-    .from(lessonProgressTable)
-    .where(and(eq(lessonProgressTable.userId, userId), eq(lessonProgressTable.passed, true)));
-  return new Set(rows.map((r) => r.lessonId));
-}
 
 /** Resolve which curriculum to use: from query param or student's enrolled curriculum or platform default */
 async function resolveCurriculumId(
@@ -29,7 +32,6 @@ async function resolveCurriculumId(
     if (profile?.curriculumId) return profile.curriculumId;
   }
 
-  // Fall back to the first active curriculum
   const [defaultC] = await db
     .select({ id: curriculaTable.id })
     .from(curriculaTable)
@@ -41,7 +43,9 @@ async function resolveCurriculumId(
 
 router.get("/levels", async (req, res): Promise<void> => {
   const userId = req.session?.userId;
-  const queryCurriculumId = req.query.curriculumId ? parseInt(req.query.curriculumId as string, 10) : undefined;
+  const queryCurriculumId = req.query.curriculumId
+    ? parseInt(req.query.curriculumId as string, 10)
+    : undefined;
   const curriculumId = await resolveCurriculumId(queryCurriculumId, userId);
 
   const where = curriculumId ? eq(levelsTable.curriculumId, curriculumId) : undefined;
@@ -51,10 +55,30 @@ router.get("/levels", async (req, res): Promise<void> => {
     .where(where)
     .orderBy(asc(levelsTable.order));
 
-  const completedIds = await getCompletedLessonIds(userId);
-  const allLessons = curriculumId
-    ? await db.select().from(lessonsTable)
-    : [];
+  // Fetch curriculum metadata
+  const curriculum = curriculumId
+    ? await db
+        .select()
+        .from(curriculaTable)
+        .where(eq(curriculaTable.id, curriculumId))
+        .limit(1)
+        .then((r) => r[0] ?? null)
+    : null;
+
+  const completedIds = userId ? await getCompletedLessonIds(userId) : new Set<number>();
+
+  // Fetch all published lessons for the curriculum's levels
+  const levelIds = levels.map((l) => l.id);
+  const allLessons =
+    levelIds.length > 0
+      ? await db
+          .select()
+          .from(lessonsTable)
+          .where(and(
+            eq(lessonsTable.status, "published"),
+            isNull(lessonsTable.softDeletedAt),
+          ))
+      : [];
 
   let profile = null;
   if (userId) {
@@ -66,13 +90,46 @@ router.get("/levels", async (req, res): Promise<void> => {
     profile = p;
   }
   const currentLevelId = profile?.currentLevelId ?? null;
+  const currentLevel = currentLevelId
+    ? levels.find((l) => l.id === currentLevelId)
+    : null;
+  const currentLevelOrder = currentLevel?.order ?? null;
+
+  const allProgress = userId
+    ? await db
+        .select()
+        .from(lessonProgressTable)
+        .where(eq(lessonProgressTable.userId, userId))
+    : [];
 
   const result = levels.map((level) => {
-    const levelLessons = allLessons.filter((l) => l.levelId === level.id && l.isPublished);
-    const completedInLevel = levelLessons.filter((l) => completedIds.has(l.id)).length;
+    const levelLessons = allLessons
+      .filter((l) => l.levelId === level.id)
+      .sort((a, b) => a.order - b.order);
+
+    let completedInLevel = 0;
+    const lessonStateCounts = { LOCKED: 0, AVAILABLE: 0, IN_PROGRESS: 0, COMPLETED: 0 };
+
+    levelLessons.forEach((lesson, idx) => {
+      const prevLessonId = idx > 0 ? levelLessons[idx - 1].id : null;
+      const progressRow = allProgress.find((p) => p.lessonId === lesson.id);
+      const state = deriveLessonStateWithOrders(
+        lesson,
+        level.order,
+        currentLevelOrder,
+        completedIds,
+        prevLessonId,
+        progressRow?.status,
+      );
+      lessonStateCounts[state]++;
+      if (state === "COMPLETED") completedInLevel++;
+    });
+
     const isCurrentLevel = level.id === currentLevelId;
-    const isUnlocked = isCurrentLevel || level.order === 1;
-    const isCompleted = levelLessons.length > 0 && completedInLevel === levelLessons.length;
+    const isUnlocked = isCurrentLevel || (currentLevelOrder !== null && level.order <= currentLevelOrder);
+    const isCompleted =
+      levelLessons.length > 0 && completedInLevel === levelLessons.length;
+
     return {
       id: level.id,
       curriculumId: level.curriculumId,
@@ -86,26 +143,51 @@ router.get("/levels", async (req, res): Promise<void> => {
       completedLessons: completedInLevel,
       isUnlocked,
       isCompleted,
+      lessonStateCounts,
     };
   });
 
-  res.json(result);
+  res.json({
+    curriculum: curriculum
+      ? {
+          id: curriculum.id,
+          name: curriculum.name,
+          nameInLearnerLanguage: curriculum.nameInLearnerLanguage,
+          targetLanguageCode: curriculum.targetLanguageCode,
+          learnerLanguageCode: curriculum.learnerLanguageCode,
+          levelFramework: curriculum.levelFramework,
+        }
+      : null,
+    levels: result,
+  });
 });
 
 router.get("/levels/:levelId", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.levelId) ? req.params.levelId[0] : req.params.levelId;
   const levelId = parseInt(raw, 10);
-  if (isNaN(levelId)) { res.status(400).json({ error: "Invalid level ID" }); return; }
+  if (isNaN(levelId)) {
+    res.status(400).json({ error: "Invalid level ID" });
+    return;
+  }
 
   const [level] = await db
     .select()
     .from(levelsTable)
     .where(eq(levelsTable.id, levelId))
     .limit(1);
-  if (!level) { res.status(404).json({ error: "Level not found" }); return; }
+  if (!level) {
+    res.status(404).json({ error: "Level not found" });
+    return;
+  }
+
+  const [curriculum] = await db
+    .select()
+    .from(curriculaTable)
+    .where(eq(curriculaTable.id, level.curriculumId))
+    .limit(1);
 
   const userId = req.session?.userId;
-  const completedIds = await getCompletedLessonIds(userId);
+  const completedIds = userId ? await getCompletedLessonIds(userId) : new Set<number>();
 
   let profile = null;
   if (userId) {
@@ -116,21 +198,54 @@ router.get("/levels/:levelId", async (req, res): Promise<void> => {
       .limit(1);
     profile = p;
   }
+
   const currentLevelId = profile?.currentLevelId ?? null;
+  const allLevels = await db
+    .select({ id: levelsTable.id, order: levelsTable.order })
+    .from(levelsTable)
+    .where(eq(levelsTable.curriculumId, level.curriculumId))
+    .orderBy(asc(levelsTable.order));
+
+  const currentLevelRecord = currentLevelId
+    ? allLevels.find((l) => l.id === currentLevelId)
+    : null;
+  const currentLevelOrder = currentLevelRecord?.order ?? null;
 
   const levelLessons = await db
     .select()
     .from(lessonsTable)
-    .where(and(eq(lessonsTable.levelId, levelId), eq(lessonsTable.isPublished, true)))
+    .where(
+      and(
+        eq(lessonsTable.levelId, levelId),
+        publishedLessonFilter(),
+      ),
+    )
     .orderBy(asc(lessonsTable.order));
 
-  const completedInLevel = levelLessons.filter((l) => completedIds.has(l.id)).length;
-  const isCurrentLevel = level.id === currentLevelId;
-  const isUnlocked = isCurrentLevel || level.order === 1;
-  const isCompleted = levelLessons.length > 0 && completedInLevel === levelLessons.length;
+  const allProgress = userId
+    ? await db
+        .select()
+        .from(lessonProgressTable)
+        .where(eq(lessonProgressTable.userId, userId))
+    : [];
+
+  let completedInLevel = 0;
+  const lessonStateCounts = { LOCKED: 0, AVAILABLE: 0, IN_PROGRESS: 0, COMPLETED: 0 };
 
   const lessonSummaries = levelLessons.map((lesson, idx) => {
-    const unlocked = idx === 0 ? isUnlocked : completedIds.has(levelLessons[idx - 1].id);
+    const prevLessonId = idx > 0 ? levelLessons[idx - 1].id : null;
+    const progressRow = allProgress.find((p) => p.lessonId === lesson.id);
+    const state = deriveLessonStateWithOrders(
+      lesson,
+      level.order,
+      currentLevelOrder,
+      completedIds,
+      prevLessonId,
+      progressRow?.status,
+    );
+    lessonStateCounts[state]++;
+    if (state === "COMPLETED") completedInLevel++;
+
     return {
       id: lesson.id,
       levelId: lesson.levelId,
@@ -142,12 +257,20 @@ router.get("/levels/:levelId", async (req, res): Promise<void> => {
       order: lesson.order,
       lessonType: lesson.lessonType,
       estimatedMinutes: lesson.estimatedMinutes,
-      isUnlocked: unlocked,
-      isCompleted: completedIds.has(lesson.id),
-      bestScore: null,
+      state,
+      isUnlocked: state !== "LOCKED",
+      isCompleted: state === "COMPLETED",
+      bestScore: progressRow?.bestScore ?? null,
       xpReward: lesson.xpReward,
     };
   });
+
+  const isCurrentLevel = level.id === currentLevelId;
+  const isUnlocked =
+    isCurrentLevel ||
+    (currentLevelOrder !== null && level.order <= currentLevelOrder);
+  const isCompleted =
+    levelLessons.length > 0 && completedInLevel === levelLessons.length;
 
   res.json({
     id: level.id,
@@ -162,6 +285,17 @@ router.get("/levels/:levelId", async (req, res): Promise<void> => {
     completedLessons: completedInLevel,
     isUnlocked,
     isCompleted,
+    lessonStateCounts,
+    curriculum: curriculum
+      ? {
+          id: curriculum.id,
+          name: curriculum.name,
+          nameInLearnerLanguage: curriculum.nameInLearnerLanguage,
+          targetLanguageCode: curriculum.targetLanguageCode,
+          learnerLanguageCode: curriculum.learnerLanguageCode,
+          levelFramework: curriculum.levelFramework,
+        }
+      : null,
     lessons: lessonSummaries,
   });
 });

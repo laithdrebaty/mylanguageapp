@@ -14,7 +14,7 @@ import { redis } from "./services/redis";
 
 const app: Express = express();
 
-// Trust the first reverse proxy (Replit's nginx / Cloudflare).
+// Trust the first reverse proxy (e.g. nginx / Cloudflare).
 // Required for rate-limit to correctly identify client IPs from X-Forwarded-For,
 // and for secure cookies to work behind HTTPS termination.
 app.set("trust proxy", parseInt(process.env.TRUST_PROXY ?? "1", 10));

@@ -9,6 +9,7 @@ import type { LessonSummary } from './lessonSummary';
 
 export interface LevelDetail {
   id: number;
+  curriculumId: number;
   code: string;
   name: string;
   nameAr: string;
@@ -18,8 +19,8 @@ export interface LevelDetail {
   descriptionAr?: string | null;
   order: number;
   totalLessons: number;
-  completedLessons?: number;
+  completedLessons: number;
   isUnlocked: boolean;
-  isCompleted?: boolean;
+  isCompleted: boolean;
   lessons: LessonSummary[];
 }

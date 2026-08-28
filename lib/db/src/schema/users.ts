@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { curriculaTable } from "./languages";
@@ -33,16 +33,18 @@ export type User = typeof usersTable.$inferSelect;
 
 export const studentProfilesTable = pgTable("student_profiles", {
   id: serial("id").primaryKey(),
-  userId: serial("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   curriculumId: integer("curriculum_id").references(() => curriculaTable.id),
   currentLevelId: integer("current_level_id").references(() => levelsTable.id),
-  streakDays: serial("streak_days").notNull(),
-  totalXp: serial("total_xp").notNull(),
+  streakDays: integer("streak_days").notNull().default(0),
+  totalXp: integer("total_xp").notNull().default(0),
   placementCompleted: boolean("placement_completed").notNull().default(false),
   lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).defaultNow(),
   bio: text("bio"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  userIdUnique: uniqueIndex("student_profiles_user_id_unique").on(table.userId),
+}));
 
 export type StudentProfile = typeof studentProfilesTable.$inferSelect;

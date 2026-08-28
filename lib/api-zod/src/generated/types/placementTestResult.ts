@@ -8,11 +8,11 @@
 
 export interface PlacementTestResult {
   score: number;
-  total?: number;
+  total: number;
   percentage: number;
   assignedLevelCode: string;
   assignedLevelName: string;
-  assignedLevelNameAr?: string;
-  message?: string;
-  messageAr?: string;
+  assignedLevelNameAr: string;
+  message: string;
+  messageAr: string;
 }

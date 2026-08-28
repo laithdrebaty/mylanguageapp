@@ -7,11 +7,12 @@
  */
 import type { ContentBlock } from './contentBlock';
 import type { LessonDetailLessonType } from './lessonDetailLessonType';
+import type { LessonDetailState } from './lessonDetailState';
 
 export interface LessonDetail {
   id: number;
   levelId: number;
-  levelCode?: string;
+  levelCode: string;
   title: string;
   titleAr: string;
   /** @nullable */
@@ -21,13 +22,15 @@ export interface LessonDetail {
   order: number;
   lessonType: LessonDetailLessonType;
   estimatedMinutes: number;
+  state: LessonDetailState;
   isUnlocked: boolean;
-  isCompleted?: boolean;
+  isCompleted: boolean;
   /** @nullable */
-  bestScore?: number | null;
-  xpReward?: number;
-  passingScore?: number;
+  bestScore: number | null;
+  xpReward: number;
+  passingScore: number;
   contentBlocks: ContentBlock[];
+  completedBlockIds: number[];
   /** @nullable */
   objectives?: string[] | null;
   /** @nullable */

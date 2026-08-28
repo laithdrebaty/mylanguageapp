@@ -4,17 +4,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { 
-  ArrowRight, 
-  BookOpen, 
-  Mic, 
-  MessageSquare, 
-  BookMarked, 
-  GraduationCap, 
-  Play, 
+import {
+  ArrowRight,
+  BookOpen,
+  Mic,
+  MessageSquare,
+  BookMarked,
+  GraduationCap,
+  Play,
   CheckCircle2,
-  Lock
+  Lock,
+  RotateCcw,
 } from "lucide-react";
+import type { LessonSummary } from "@workspace/api-client-react";
 
 export default function Level({ params }: { params: { levelId: string } }) {
   const levelId = parseInt(params.levelId, 10);
@@ -44,7 +46,7 @@ export default function Level({ params }: { params: { levelId: string } }) {
   const getIcon = (type: string) => {
     switch(type) {
       case "reading": return <BookOpen className="h-5 w-5" />;
-      case "speaking": 
+      case "speaking":
       case "pronunciation": return <Mic className="h-5 w-5" />;
       case "conversation": return <MessageSquare className="h-5 w-5" />;
       case "vocabulary": return <BookMarked className="h-5 w-5" />;
@@ -63,11 +65,31 @@ export default function Level({ params }: { params: { levelId: string } }) {
     }
   };
 
+  const getLessonStateLabel = (lesson: LessonSummary): string => {
+    switch (lesson.state) {
+      case "LOCKED": return "مقفل";
+      case "AVAILABLE": return "متاح";
+      case "IN_PROGRESS": return "جارٍ";
+      case "COMPLETED": return "مكتمل";
+      default: return "";
+    }
+  };
+
+  const getLessonStateBadgeColor = (lesson: LessonSummary): string => {
+    switch (lesson.state) {
+      case "LOCKED": return "bg-muted text-muted-foreground";
+      case "AVAILABLE": return "bg-emerald-50 text-emerald-700";
+      case "IN_PROGRESS": return "bg-blue-50 text-blue-700";
+      case "COMPLETED": return "bg-purple-50 text-purple-700";
+      default: return "bg-muted text-muted-foreground";
+    }
+  };
+
   const progress = level.totalLessons > 0 ? ((level.completedLessons || 0) / level.totalLessons) * 100 : 0;
 
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
-      <button 
+      <button
         onClick={() => setLocation("/learn")}
         className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors mb-4"
       >
@@ -79,7 +101,7 @@ export default function Level({ params }: { params: { levelId: string } }) {
       <div className="bg-primary text-primary-foreground rounded-3xl p-8 relative overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4"></div>
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-black/10 rounded-full blur-2xl translate-y-1/3 -translate-x-1/3"></div>
-        
+
         <div className="relative z-10">
           <div className="inline-block px-3 py-1 bg-primary-foreground/20 backdrop-blur-sm rounded-full text-sm font-bold mb-4 font-serif tracking-wider" dir="ltr">
             {level.code}
@@ -106,56 +128,86 @@ export default function Level({ params }: { params: { levelId: string } }) {
       {/* Lessons List */}
       <div className="space-y-4 mt-8">
         <h2 className="text-2xl font-bold text-foreground mb-6">دروس المستوى</h2>
-        
-        {level.lessons.map((lesson) => (
-          <Link key={lesson.id} href={lesson.isUnlocked ? `/lesson/${lesson.id}` : "#"}>
-            <Card className={`transition-all duration-200 border-2 ${
-              lesson.isCompleted ? "border-transparent bg-secondary/30" :
-              lesson.isUnlocked ? "border-border hover:border-primary/40 cursor-pointer shadow-sm" : 
-              "border-transparent bg-muted/30 opacity-75"
-            }`}>
-              <CardContent className="p-4 md:p-6 flex items-center gap-4 md:gap-6">
-                
-                {/* Status/Type Icon */}
-                <div className={`h-12 w-12 md:h-14 md:w-14 rounded-2xl flex items-center justify-center shrink-0 border ${
-                  lesson.isCompleted ? "bg-emerald-100 text-emerald-600 border-emerald-200" :
-                  lesson.isUnlocked ? getTypeColor(lesson.lessonType) :
-                  "bg-muted text-muted-foreground border-transparent"
-                }`}>
-                  {lesson.isCompleted ? <CheckCircle2 className="h-6 w-6" /> : 
-                   !lesson.isUnlocked ? <Lock className="h-5 w-5" /> :
-                   getIcon(lesson.lessonType)}
-                </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-bold text-muted-foreground">الدرس {lesson.order}</span>
-                    <span className="w-1 h-1 rounded-full bg-border"></span>
-                    <span className="text-xs font-medium text-muted-foreground capitalize">{lesson.lessonType}</span>
-                  </div>
-                  <h3 className={`text-lg font-bold truncate ${!lesson.isUnlocked ? "text-muted-foreground" : "text-foreground"}`}>
-                    {lesson.titleAr}
-                  </h3>
-                  <p className="text-sm text-muted-foreground truncate" dir="ltr">
-                    {lesson.title}
-                  </p>
-                </div>
+        {level.lessons.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">
+            لا توجد دروس في هذا المستوى بعد.
+          </div>
+        )}
 
-                {/* Action */}
-                <div className="hidden md:flex shrink-0 items-center gap-4">
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-foreground">{lesson.estimatedMinutes} دقيقة</div>
-                    <div className="text-xs text-amber-600 font-bold">+{lesson.xpReward} XP</div>
+        {level.lessons.map((lesson) => {
+          const isLocked = lesson.state === "LOCKED";
+          const isCompleted = lesson.state === "COMPLETED";
+          const isInProgress = lesson.state === "IN_PROGRESS";
+          const canNavigate = !isLocked;
+
+          return (
+            <Link key={lesson.id} href={canNavigate ? `/lesson/${lesson.id}` : "#"}>
+              <Card className={`transition-all duration-200 border-2 ${
+                isCompleted ? "border-transparent bg-secondary/30" :
+                isInProgress ? "border-blue-200 hover:border-blue-400 cursor-pointer shadow-sm" :
+                canNavigate ? "border-border hover:border-primary/40 cursor-pointer shadow-sm" :
+                "border-transparent bg-muted/30 opacity-75"
+              }`}>
+                <CardContent className="p-4 md:p-6 flex items-center gap-4 md:gap-6">
+
+                  {/* Status/Type Icon */}
+                  <div className={`h-12 w-12 md:h-14 md:w-14 rounded-2xl flex items-center justify-center shrink-0 border ${
+                    isCompleted ? "bg-emerald-100 text-emerald-600 border-emerald-200" :
+                    isLocked ? "bg-muted text-muted-foreground border-transparent" :
+                    getTypeColor(lesson.lessonType)
+                  }`}>
+                    {isCompleted ? <CheckCircle2 className="h-6 w-6" /> :
+                     isLocked ? <Lock className="h-5 w-5" /> :
+                     getIcon(lesson.lessonType)}
                   </div>
-                  {lesson.isUnlocked && !lesson.isCompleted && (
-                    <Button className="rounded-xl">بدء</Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-xs font-bold text-muted-foreground">الدرس {lesson.order}</span>
+                      <span className="w-1 h-1 rounded-full bg-border"></span>
+                      <span className="text-xs font-medium text-muted-foreground capitalize">{lesson.lessonType}</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getLessonStateBadgeColor(lesson)}`}>
+                        {getLessonStateLabel(lesson)}
+                      </span>
+                    </div>
+                    <h3 className={`text-lg font-bold truncate ${isLocked ? "text-muted-foreground" : "text-foreground"}`}>
+                      {lesson.titleAr}
+                    </h3>
+                    <p className="text-sm text-muted-foreground truncate" dir="ltr">
+                      {lesson.title}
+                    </p>
+                    {lesson.bestScore !== null && lesson.bestScore !== undefined && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        أفضل نتيجة: <span className="font-bold text-emerald-600">{lesson.bestScore}%</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Action */}
+                  <div className="hidden md:flex shrink-0 items-center gap-4">
+                    <div className="text-right">
+                      <div className="text-sm font-medium text-foreground">{lesson.estimatedMinutes} دقيقة</div>
+                      <div className="text-xs text-amber-600 font-bold">+{lesson.xpReward} XP</div>
+                    </div>
+                    {isCompleted && (
+                      <Button variant="outline" className="rounded-xl gap-1" size="sm">
+                        <RotateCcw className="h-3 w-3" />
+                        مراجعة
+                      </Button>
+                    )}
+                    {(canNavigate && !isCompleted) && (
+                      <Button className="rounded-xl">
+                        {isInProgress ? "متابعة" : "بدء"}
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

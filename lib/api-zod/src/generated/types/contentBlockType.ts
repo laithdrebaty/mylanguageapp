@@ -11,10 +11,14 @@ export type ContentBlockType = typeof ContentBlockType[keyof typeof ContentBlock
 
 export const ContentBlockType = {
   text: 'text',
-  audio_placeholder: 'audio_placeholder',
   vocabulary_list: 'vocabulary_list',
   mcq: 'mcq',
   speaking_prompt: 'speaking_prompt',
   pronunciation_guide: 'pronunciation_guide',
+  audio_placeholder: 'audio_placeholder',
+  open_ended: 'open_ended',
   dialogue: 'dialogue',
+  explanation: 'explanation',
+  spelling: 'spelling',
+  review: 'review',
 } as const;

@@ -8,6 +8,7 @@
 
 export interface Level {
   id: number;
+  curriculumId: number;
   code: string;
   name: string;
   nameAr: string;
@@ -17,7 +18,7 @@ export interface Level {
   descriptionAr?: string | null;
   order: number;
   totalLessons: number;
-  completedLessons?: number;
+  completedLessons: number;
   isUnlocked: boolean;
-  isCompleted?: boolean;
+  isCompleted: boolean;
 }

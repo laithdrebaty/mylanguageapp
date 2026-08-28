@@ -36,6 +36,9 @@ import type {
   GetVocabularyParams,
   HealthStatus,
   Language,
+  LessonActivityResult,
+  LessonActivitySubmission,
+  LessonCompletionError,
   LessonCompletionInput,
   LessonDetail,
   LessonProgress,
@@ -1134,6 +1137,80 @@ export const useStartLesson = <TError = ErrorType<ErrorResponse>,
       return useMutation(getStartLessonMutationOptions(options));
     }
 
+export const getSubmitLessonActivityUrl = (lessonId: number,
+    blockId: number,) => {
+
+
+
+
+  return `/api/lessons/${lessonId}/blocks/${blockId}/submit`
+}
+
+/**
+ * @summary Submit or complete one configured lesson activity
+ */
+export const submitLessonActivity = async (lessonId: number,
+    blockId: number,
+    lessonActivitySubmission: LessonActivitySubmission, options?: Parameters<typeof customFetch>[1]): Promise<LessonActivityResult> => {
+
+  return customFetch<LessonActivityResult>(getSubmitLessonActivityUrl(lessonId,blockId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(lessonActivitySubmission)
+  }
+);}
+
+
+
+
+
+export const getSubmitLessonActivityMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitLessonActivity>>, TError,{lessonId: number;blockId: number;data: BodyType<LessonActivitySubmission>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitLessonActivity>>, TError,{lessonId: number;blockId: number;data: BodyType<LessonActivitySubmission>}, TContext> => {
+
+const mutationKey = ['submitLessonActivity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitLessonActivity>>, {lessonId: number;blockId: number;data: BodyType<LessonActivitySubmission>}> = (props) => {
+          const {lessonId,blockId,data} = props ?? {};
+
+          return  submitLessonActivity(lessonId,blockId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitLessonActivityMutationResult = NonNullable<Awaited<ReturnType<typeof submitLessonActivity>>>
+    export type SubmitLessonActivityMutationBody = BodyType<LessonActivitySubmission>
+    export type SubmitLessonActivityMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Submit or complete one configured lesson activity
+ */
+export const useSubmitLessonActivity = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitLessonActivity>>, TError,{lessonId: number;blockId: number;data: BodyType<LessonActivitySubmission>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitLessonActivity>>,
+        TError,
+        {lessonId: number;blockId: number;data: BodyType<LessonActivitySubmission>},
+        TContext
+      > => {
+      return useMutation(getSubmitLessonActivityMutationOptions(options));
+    }
+
 export const getCompleteLessonUrl = (lessonId: number,) => {
 
 
@@ -1143,7 +1220,7 @@ export const getCompleteLessonUrl = (lessonId: number,) => {
 }
 
 /**
- * @summary Submit lesson completion with score
+ * @summary Complete a lesson using server-verified activity results
  */
 export const completeLesson = async (lessonId: number,
     lessonCompletionInput: LessonCompletionInput, options?: Parameters<typeof customFetch>[1]): Promise<LessonProgress> => {
@@ -1161,7 +1238,7 @@ export const completeLesson = async (lessonId: number,
 
 
 
-export const getCompleteLessonMutationOptions = <TError = ErrorType<ErrorResponse>,
+export const getCompleteLessonMutationOptions = <TError = ErrorType<ErrorResponse | LessonCompletionError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeLesson>>, TError,{lessonId: number;data: BodyType<LessonCompletionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof completeLesson>>, TError,{lessonId: number;data: BodyType<LessonCompletionInput>}, TContext> => {
 
@@ -1190,12 +1267,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CompleteLessonMutationResult = NonNullable<Awaited<ReturnType<typeof completeLesson>>>
     export type CompleteLessonMutationBody = BodyType<LessonCompletionInput>
-    export type CompleteLessonMutationError = ErrorType<ErrorResponse>
+    export type CompleteLessonMutationError = ErrorType<ErrorResponse | LessonCompletionError>
 
     /**
- * @summary Submit lesson completion with score
+ * @summary Complete a lesson using server-verified activity results
  */
-export const useCompleteLesson = <TError = ErrorType<ErrorResponse>,
+export const useCompleteLesson = <TError = ErrorType<ErrorResponse | LessonCompletionError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeLesson>>, TError,{lessonId: number;data: BodyType<LessonCompletionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof completeLesson>>,

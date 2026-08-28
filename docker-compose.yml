@@ -1,0 +1,72 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ascension
+      POSTGRES_PASSWORD: ascension
+      POSTGRES_DB: ascension
+    ports:
+      - '5433:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ascension -d ascension']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates/updates the schema, then exits. The api service waits
+  # for it to finish successfully before starting.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://ascension:ascension@db:5432/ascension
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_URL: postgresql://ascension:ascension@db:5432/ascension
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-insecure-secret}
+      NODE_ENV: development
+      PORT: '8080'
+      LOG_LEVEL: info
+      TRUST_PROXY: '1'
+      AI_PROVIDER: stub
+      JOB_QUEUE: memory
+    ports:
+      - '8080:8080'
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      target: web
+    environment:
+      PORT: '5173'
+      BASE_PATH: /
+      # The app calls relative /api paths; Vite proxies them to the api service.
+      API_PROXY_TARGET: http://api:8080
+    ports:
+      - '5173:5173'
+    depends_on:
+      - api
+    volumes:
+      # Live-reload the frontend source without rebuilding the image.
+      # node_modules stay inside the container (Linux binaries).
+      - ./artifacts/ascension/src:/app/artifacts/ascension/src
+      - ./attached_assets:/app/attached_assets
+
+volumes:
+  db-data:

@@ -174,13 +174,13 @@ export const SubmitPlacementTestBody = zod.object({
 
 export const SubmitPlacementTestResponse = zod.object({
   "score": zod.number(),
-  "total": zod.number().optional(),
+  "total": zod.number(),
   "percentage": zod.number(),
   "assignedLevelCode": zod.string(),
   "assignedLevelName": zod.string(),
-  "assignedLevelNameAr": zod.string().optional(),
-  "message": zod.string().optional(),
-  "messageAr": zod.string().optional()
+  "assignedLevelNameAr": zod.string(),
+  "message": zod.string(),
+  "messageAr": zod.string()
 })
 
 
@@ -189,6 +189,7 @@ export const SubmitPlacementTestResponse = zod.object({
  */
 export const GetLevelsResponseItem = zod.object({
   "id": zod.number(),
+  "curriculumId": zod.number(),
   "code": zod.string(),
   "name": zod.string(),
   "nameAr": zod.string(),
@@ -196,9 +197,9 @@ export const GetLevelsResponseItem = zod.object({
   "descriptionAr": zod.string().nullish(),
   "order": zod.number(),
   "totalLessons": zod.number(),
-  "completedLessons": zod.number().optional(),
+  "completedLessons": zod.number(),
   "isUnlocked": zod.boolean(),
-  "isCompleted": zod.boolean().optional()
+  "isCompleted": zod.boolean()
 })
 export const GetLevelsResponse = zod.array(GetLevelsResponseItem)
 
@@ -212,6 +213,7 @@ export const GetLevelParams = zod.object({
 
 export const GetLevelResponse = zod.object({
   "id": zod.number(),
+  "curriculumId": zod.number(),
   "code": zod.string(),
   "name": zod.string(),
   "nameAr": zod.string(),
@@ -219,13 +221,13 @@ export const GetLevelResponse = zod.object({
   "descriptionAr": zod.string().nullish(),
   "order": zod.number(),
   "totalLessons": zod.number(),
-  "completedLessons": zod.number().optional(),
+  "completedLessons": zod.number(),
   "isUnlocked": zod.boolean(),
-  "isCompleted": zod.boolean().optional(),
+  "isCompleted": zod.boolean(),
   "lessons": zod.array(zod.object({
   "id": zod.number(),
   "levelId": zod.number(),
-  "levelCode": zod.string().optional(),
+  "levelCode": zod.string(),
   "title": zod.string(),
   "titleAr": zod.string(),
   "description": zod.string().nullish(),
@@ -233,10 +235,11 @@ export const GetLevelResponse = zod.object({
   "order": zod.number(),
   "lessonType": zod.enum(['general', 'reading', 'pronunciation', 'speaking', 'vocabulary', 'grammar', 'conversation']),
   "estimatedMinutes": zod.number(),
+  "state": zod.enum(['LOCKED', 'AVAILABLE', 'IN_PROGRESS', 'COMPLETED']),
   "isUnlocked": zod.boolean(),
   "isCompleted": zod.boolean(),
-  "bestScore": zod.number().nullish(),
-  "xpReward": zod.number().optional()
+  "bestScore": zod.number().nullable(),
+  "xpReward": zod.number()
 }))
 })
 
@@ -251,7 +254,7 @@ export const GetLessonsQueryParams = zod.object({
 export const GetLessonsResponseItem = zod.object({
   "id": zod.number(),
   "levelId": zod.number(),
-  "levelCode": zod.string().optional(),
+  "levelCode": zod.string(),
   "title": zod.string(),
   "titleAr": zod.string(),
   "description": zod.string().nullish(),
@@ -259,10 +262,11 @@ export const GetLessonsResponseItem = zod.object({
   "order": zod.number(),
   "lessonType": zod.enum(['general', 'reading', 'pronunciation', 'speaking', 'vocabulary', 'grammar', 'conversation']),
   "estimatedMinutes": zod.number(),
+  "state": zod.enum(['LOCKED', 'AVAILABLE', 'IN_PROGRESS', 'COMPLETED']),
   "isUnlocked": zod.boolean(),
   "isCompleted": zod.boolean(),
-  "bestScore": zod.number().nullish(),
-  "xpReward": zod.number().optional()
+  "bestScore": zod.number().nullable(),
+  "xpReward": zod.number()
 })
 export const GetLessonsResponse = zod.array(GetLessonsResponseItem)
 
@@ -277,7 +281,7 @@ export const GetLessonParams = zod.object({
 export const GetLessonResponse = zod.object({
   "id": zod.number(),
   "levelId": zod.number(),
-  "levelCode": zod.string().optional(),
+  "levelCode": zod.string(),
   "title": zod.string(),
   "titleAr": zod.string(),
   "description": zod.string().nullish(),
@@ -285,18 +289,27 @@ export const GetLessonResponse = zod.object({
   "order": zod.number(),
   "lessonType": zod.enum(['general', 'reading', 'pronunciation', 'speaking', 'vocabulary', 'grammar', 'conversation']),
   "estimatedMinutes": zod.number(),
+  "state": zod.enum(['AVAILABLE', 'IN_PROGRESS', 'COMPLETED']),
   "isUnlocked": zod.boolean(),
-  "isCompleted": zod.boolean().optional(),
-  "bestScore": zod.number().nullish(),
-  "xpReward": zod.number().optional(),
-  "passingScore": zod.number().optional(),
+  "isCompleted": zod.boolean(),
+  "bestScore": zod.number().nullable(),
+  "xpReward": zod.number(),
+  "passingScore": zod.number(),
   "contentBlocks": zod.array(zod.object({
   "id": zod.number(),
-  "type": zod.enum(['text', 'audio_placeholder', 'vocabulary_list', 'mcq', 'speaking_prompt', 'pronunciation_guide', 'dialogue']),
+  "type": zod.enum(['text', 'vocabulary_list', 'mcq', 'speaking_prompt', 'pronunciation_guide', 'audio_placeholder', 'open_ended', 'dialogue', 'explanation', 'spelling', 'review']),
   "order": zod.number(),
+  "title": zod.string().nullish(),
+  "titleAr": zod.string().nullish(),
+  "instructions": zod.string().nullish(),
+  "instructionsAr": zod.string().nullish(),
+  "isRequired": zod.boolean(),
+  "isCompleted": zod.boolean(),
+  "estimatedMinutes": zod.number().nullish(),
   "content": zod.string().nullish(),
   "contentAr": zod.string().nullish(),
   "audioNote": zod.string().nullish(),
+  "audioUrl": zod.string().nullish(),
   "vocabularyItems": zod.array(zod.object({
   "id": zod.number(),
   "levelId": zod.number(),
@@ -309,6 +322,7 @@ export const GetLessonResponse = zod.object({
   "audioNote": zod.string().nullish()
 })).nullish(),
   "exerciseId": zod.number().nullish(),
+  "exerciseType": zod.string().nullish(),
   "question": zod.string().nullish(),
   "questionAr": zod.string().nullish(),
   "options": zod.array(zod.object({
@@ -320,6 +334,7 @@ export const GetLessonResponse = zod.object({
   "promptAr": zod.string().nullish(),
   "exampleAudio": zod.string().nullish()
 })),
+  "completedBlockIds": zod.array(zod.number()),
   "objectives": zod.array(zod.string()).nullish(),
   "objectivesAr": zod.array(zod.string()).nullish()
 })
@@ -335,47 +350,81 @@ export const StartLessonParams = zod.object({
 export const StartLessonResponse = zod.object({
   "id": zod.number(),
   "lessonId": zod.number(),
-  "studentId": zod.number(),
+  "userId": zod.number(),
   "status": zod.enum(['not_started', 'in_progress', 'completed', 'passed', 'failed']),
   "bestScore": zod.number().nullish(),
   "lastScore": zod.number().nullish(),
   "attempts": zod.number(),
-  "passed": zod.boolean().optional(),
+  "passed": zod.boolean(),
   "completedAt": zod.coerce.date().nullish(),
   "startedAt": zod.coerce.date().nullish(),
-  "xpEarned": zod.number().optional(),
-  "nextLessonUnlocked": zod.boolean().optional()
+  "xpEarned": zod.number(),
+  "nextLessonUnlocked": zod.boolean(),
+  "nextLessonId": zod.number().nullish(),
+  "missingRequiredBlockIds": zod.array(zod.number()).optional(),
+  "timeSpentSeconds": zod.number().optional()
 })
 
 
 /**
- * @summary Submit lesson completion with score
+ * @summary Submit or complete one configured lesson activity
+ */
+export const SubmitLessonActivityParams = zod.object({
+  "lessonId": zod.coerce.number(),
+  "blockId": zod.coerce.number()
+})
+
+
+
+
+export const SubmitLessonActivityBody = zod.object({
+  "clientSubmissionId": zod.string().min(1),
+  "selectedOptionId": zod.string().optional(),
+  "responseText": zod.string().optional(),
+  "mediaReference": zod.string().optional(),
+  "recordingDurationSeconds": zod.number().optional(),
+  "timeSpentSeconds": zod.number().optional()
+})
+
+export const SubmitLessonActivityResponse = zod.object({
+  "attemptId": zod.number(),
+  "blockId": zod.number(),
+  "completed": zod.boolean(),
+  "correct": zod.boolean().nullable(),
+  "score": zod.number().nullable(),
+  "explanation": zod.string().nullable(),
+  "explanationAr": zod.string().nullable(),
+  "evaluationStatus": zod.enum(['not_required', 'pending', 'completed'])
+})
+
+
+/**
+ * @summary Complete a lesson using server-verified activity results
  */
 export const CompleteLessonParams = zod.object({
   "lessonId": zod.coerce.number()
 })
 
 export const CompleteLessonBody = zod.object({
-  "score": zod.number(),
-  "totalQuestions": zod.number(),
-  "correctAnswers": zod.number(),
-  "speakingScore": zod.number().nullish(),
   "timeSpentSeconds": zod.number().optional()
 })
 
 export const CompleteLessonResponse = zod.object({
   "id": zod.number(),
   "lessonId": zod.number(),
-  "studentId": zod.number(),
+  "userId": zod.number(),
   "status": zod.enum(['not_started', 'in_progress', 'completed', 'passed', 'failed']),
   "bestScore": zod.number().nullish(),
   "lastScore": zod.number().nullish(),
   "attempts": zod.number(),
-  "passed": zod.boolean().optional(),
+  "passed": zod.boolean(),
   "completedAt": zod.coerce.date().nullish(),
   "startedAt": zod.coerce.date().nullish(),
-  "xpEarned": zod.number().optional(),
-  "nextLessonUnlocked": zod.boolean().optional()
+  "xpEarned": zod.number(),
+  "nextLessonUnlocked": zod.boolean(),
+  "nextLessonId": zod.number().nullish(),
+  "missingRequiredBlockIds": zod.array(zod.number()).optional(),
+  "timeSpentSeconds": zod.number().optional()
 })
 
 
@@ -389,16 +438,19 @@ export const GetLessonProgressParams = zod.object({
 export const GetLessonProgressResponse = zod.object({
   "id": zod.number(),
   "lessonId": zod.number(),
-  "studentId": zod.number(),
+  "userId": zod.number(),
   "status": zod.enum(['not_started', 'in_progress', 'completed', 'passed', 'failed']),
   "bestScore": zod.number().nullish(),
   "lastScore": zod.number().nullish(),
   "attempts": zod.number(),
-  "passed": zod.boolean().optional(),
+  "passed": zod.boolean(),
   "completedAt": zod.coerce.date().nullish(),
   "startedAt": zod.coerce.date().nullish(),
-  "xpEarned": zod.number().optional(),
-  "nextLessonUnlocked": zod.boolean().optional()
+  "xpEarned": zod.number(),
+  "nextLessonUnlocked": zod.boolean(),
+  "nextLessonId": zod.number().nullish(),
+  "missingRequiredBlockIds": zod.array(zod.number()).optional(),
+  "timeSpentSeconds": zod.number().optional()
 })
 
 
@@ -415,7 +467,6 @@ export const SubmitExerciseBody = zod.object({
 
 export const SubmitExerciseResponse = zod.object({
   "correct": zod.boolean(),
-  "correctOptionId": zod.string(),
   "explanation": zod.string().nullable(),
   "explanationAr": zod.string().nullish()
 })
@@ -526,8 +577,19 @@ export const GetDashboardResponse = zod.object({
   "country": zod.string().optional(),
   "createdAt": zod.coerce.date()
 }),
-  "currentLevel": zod.object({
+  "currentCurriculum": zod.union([zod.object({
   "id": zod.number(),
+  "targetLanguageCode": zod.string().describe('The language students are learning'),
+  "learnerLanguageCode": zod.string().describe('The student\'s native\/interface language'),
+  "name": zod.string(),
+  "nameInLearnerLanguage": zod.string(),
+  "levelFramework": zod.string().describe('Descriptive tag for the level system used (e.g. CEFR, CEFR_subdivided, HSK, JLPT, custom). Informational only — does not constrain level codes.\n'),
+  "description": zod.string().nullish(),
+  "descriptionInLearnerLanguage": zod.string().nullish()
+}),zod.null()]),
+  "currentLevel": zod.union([zod.object({
+  "id": zod.number(),
+  "curriculumId": zod.number(),
   "code": zod.string(),
   "name": zod.string(),
   "nameAr": zod.string(),
@@ -535,14 +597,14 @@ export const GetDashboardResponse = zod.object({
   "descriptionAr": zod.string().nullish(),
   "order": zod.number(),
   "totalLessons": zod.number(),
-  "completedLessons": zod.number().optional(),
+  "completedLessons": zod.number(),
   "isUnlocked": zod.boolean(),
-  "isCompleted": zod.boolean().optional()
-}),
-  "nextLesson": zod.object({
+  "isCompleted": zod.boolean()
+}),zod.null()]),
+  "nextLesson": zod.union([zod.object({
   "id": zod.number(),
   "levelId": zod.number(),
-  "levelCode": zod.string().optional(),
+  "levelCode": zod.string(),
   "title": zod.string(),
   "titleAr": zod.string(),
   "description": zod.string().nullish(),
@@ -550,14 +612,38 @@ export const GetDashboardResponse = zod.object({
   "order": zod.number(),
   "lessonType": zod.enum(['general', 'reading', 'pronunciation', 'speaking', 'vocabulary', 'grammar', 'conversation']),
   "estimatedMinutes": zod.number(),
+  "state": zod.enum(['LOCKED', 'AVAILABLE', 'IN_PROGRESS', 'COMPLETED']),
   "isUnlocked": zod.boolean(),
   "isCompleted": zod.boolean(),
-  "bestScore": zod.number().nullish(),
-  "xpReward": zod.number().optional()
+  "bestScore": zod.number().nullable(),
+  "xpReward": zod.number()
+}),zod.null()]),
+  "totalLessonsCompleted": zod.number(),
+  "totalLessonsInLevel": zod.number(),
+  "levelProgressPercent": zod.number(),
+  "lessonStateCounts": zod.object({
+  "locked": zod.number(),
+  "available": zod.number(),
+  "inProgress": zod.number(),
+  "completed": zod.number()
 }),
-  "totalLessonsCompleted": zod.number().optional(),
-  "totalLessonsInLevel": zod.number().optional(),
-  "levelProgressPercent": zod.number().optional(),
+  "lessons": zod.array(zod.object({
+  "id": zod.number(),
+  "levelId": zod.number(),
+  "levelCode": zod.string(),
+  "title": zod.string(),
+  "titleAr": zod.string(),
+  "description": zod.string().nullish(),
+  "descriptionAr": zod.string().nullish(),
+  "order": zod.number(),
+  "lessonType": zod.enum(['general', 'reading', 'pronunciation', 'speaking', 'vocabulary', 'grammar', 'conversation']),
+  "estimatedMinutes": zod.number(),
+  "state": zod.enum(['LOCKED', 'AVAILABLE', 'IN_PROGRESS', 'COMPLETED']),
+  "isUnlocked": zod.boolean(),
+  "isCompleted": zod.boolean(),
+  "bestScore": zod.number().nullable(),
+  "xpReward": zod.number()
+})),
   "weeklyProgress": zod.object({
   "lessonsThisWeek": zod.number(),
   "xpThisWeek": zod.number(),
@@ -580,7 +666,7 @@ export const GetDashboardResponse = zod.object({
 export const GetRecentLessonsResponseItem = zod.object({
   "id": zod.number(),
   "levelId": zod.number(),
-  "levelCode": zod.string().optional(),
+  "levelCode": zod.string(),
   "title": zod.string(),
   "titleAr": zod.string(),
   "description": zod.string().nullish(),
@@ -588,10 +674,11 @@ export const GetRecentLessonsResponseItem = zod.object({
   "order": zod.number(),
   "lessonType": zod.enum(['general', 'reading', 'pronunciation', 'speaking', 'vocabulary', 'grammar', 'conversation']),
   "estimatedMinutes": zod.number(),
+  "state": zod.enum(['LOCKED', 'AVAILABLE', 'IN_PROGRESS', 'COMPLETED']),
   "isUnlocked": zod.boolean(),
   "isCompleted": zod.boolean(),
-  "bestScore": zod.number().nullish(),
-  "xpReward": zod.number().optional()
+  "bestScore": zod.number().nullable(),
+  "xpReward": zod.number()
 })
 export const GetRecentLessonsResponse = zod.array(GetRecentLessonsResponseItem)
 

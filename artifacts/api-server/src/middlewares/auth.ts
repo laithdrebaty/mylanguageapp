@@ -72,3 +72,19 @@ export function requireReviewer(req: Request, res: Response, next: NextFunction)
   }
   next();
 }
+
+/**
+ * Student only.
+ * Used for student learning endpoints (lessons, progress, submissions).
+ */
+export function requireStudent(req: Request, res: Response, next: NextFunction): void {
+  if (!req.session?.userId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  if (req.session?.role !== "student") {
+    res.status(403).json({ error: "Student access required" });
+    return;
+  }
+  next();
+}

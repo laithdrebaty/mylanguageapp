@@ -6,11 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { LessonSummaryLessonType } from './lessonSummaryLessonType';
+import type { LessonSummaryState } from './lessonSummaryState';
 
 export interface LessonSummary {
   id: number;
   levelId: number;
-  levelCode?: string;
+  levelCode: string;
   title: string;
   titleAr: string;
   /** @nullable */
@@ -20,9 +21,10 @@ export interface LessonSummary {
   order: number;
   lessonType: LessonSummaryLessonType;
   estimatedMinutes: number;
+  state: LessonSummaryState;
   isUnlocked: boolean;
   isCompleted: boolean;
   /** @nullable */
-  bestScore?: number | null;
-  xpReward?: number;
+  bestScore: number | null;
+  xpReward: number;
 }
