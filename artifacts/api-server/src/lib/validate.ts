@@ -33,10 +33,48 @@ export function validate<T>(
 
 // ─── Shared schemas ────────────────────────────────────────────────────────────
 
+// A short list of passwords that are common/easy to guess. Kept lowercase
+// because the check below compares case-insensitively.
+const WEAK_PASSWORDS = new Set([
+  "password",
+  "password1",
+  "password123",
+  "12345678",
+  "123456789",
+  "1234567890",
+  "qwerty123",
+  "letmein123",
+  "welcome123",
+  "iloveyou1",
+  "admin1234",
+  "changeme1",
+]);
+
+/**
+ * Password strength rules, shared by register and any future "change
+ * password" / "reset password" screen.
+ *   - at least 8 characters (and capped so bcrypt never sees something absurd)
+ *   - at least one letter and one number
+ *   - not one of a small list of obviously weak passwords
+ */
+export const passwordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .max(100, "Password must be at most 100 characters")
+  .refine((value) => /[a-zA-Z]/.test(value), {
+    message: "Password must include at least one letter",
+  })
+  .refine((value) => /[0-9]/.test(value), {
+    message: "Password must include at least one number",
+  })
+  .refine((value) => !WEAK_PASSWORDS.has(value.toLowerCase()), {
+    message: "This password is too common, please choose a stronger one",
+  });
+
 export const registerSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters").max(100),
+  password: passwordSchema,
   preferredLanguage: z.enum(["ar", "en"]).optional().default("ar"),
   country: z.string().length(2).optional().default("SY"),
 });
