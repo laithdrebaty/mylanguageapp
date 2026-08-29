@@ -5,11 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 export default function AdminLessons() {
   const { data: lessons, isLoading, error } = useGetAdminLessons();
-  const { toast } = useToast();
 
   if (isLoading) {
     return (
@@ -35,9 +34,11 @@ export default function AdminLessons() {
           <h1 className="text-3xl font-bold text-foreground">المنهج والدروس</h1>
           <p className="text-muted-foreground mt-1">إدارة المحتوى التعليمي للمنصة</p>
         </div>
-        <Button onClick={() => toast({ title: "ميزة قيد التطوير", description: "ستتوفر واجهة إضافة الدروس قريباً." })}>
-          <Plus className="mr-2 h-4 w-4" />
-          إضافة درس جديد
+        <Button asChild>
+          <Link href="/cms/lessons/new">
+            <Plus className="mr-2 h-4 w-4" />
+            إضافة درس جديد
+          </Link>
         </Button>
       </div>
 
@@ -74,7 +75,9 @@ export default function AdminLessons() {
                     )}
                   </TableCell>
                   <TableCell className="text-center">
-                    <Button variant="ghost" size="sm">تعديل</Button>
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/cms/lessons/${lesson.id}/edit`}>تعديل</Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

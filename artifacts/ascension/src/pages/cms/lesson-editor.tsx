@@ -425,15 +425,37 @@ function BlockCard({ block, index, total, expanded, onToggle, onMoveUp, onMoveDo
   );
 }
 
+/**
+ * Fields this editor owns. Everything else on a block — notably `order`, which
+ * the reorder arrows manage independently — must never be written from here, or
+ * saving stale local state would silently undo a reorder made while the block
+ * was expanded.
+ */
+const EDITABLE_BLOCK_FIELDS = [
+  "title", "titleAr", "instructions", "instructionsAr",
+  "content", "contentAr", "audioNote", "prompt", "promptAr",
+  "exampleAudio", "isRequired", "isActive", "estimatedMinutes", "config",
+] as const;
+
 function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [localBlock, setLocalBlock] = useState(block);
 
+  // Adopt server state when this block changes underneath us (a reorder, or a
+  // refetch after another edit) so the form never drifts from what was stored.
+  useEffect(() => {
+    setLocalBlock(block);
+  }, [block.id, block.order, block.updatedAt]);
+
   const save = async () => {
     setSaving(true);
     try {
-      await onUpdate(localBlock);
+      const patch: Record<string, unknown> = {};
+      for (const key of EDITABLE_BLOCK_FIELDS) {
+        if (key in localBlock) patch[key] = localBlock[key];
+      }
+      await onUpdate(patch);
       toast({ title: "Block saved" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
