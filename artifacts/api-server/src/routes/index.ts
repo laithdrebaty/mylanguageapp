@@ -13,6 +13,7 @@ import reviewRouter from "./review";
 import adminRouter from "./admin";
 import languagesRouter from "./languages";
 import cmsRouter from "./cms";
+import quizzesRouter from "./quizzes";
 
 const router: IRouter = Router();
 
@@ -29,6 +30,7 @@ router.use(dashboardRouter);
 router.use(reviewRouter);
 router.use(adminRouter);
 router.use(languagesRouter);
+router.use(quizzesRouter);
 router.use(cmsRouter);
 
 export default router;
