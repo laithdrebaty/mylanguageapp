@@ -76,9 +76,22 @@ non-ASCII characters — as this one does (`ذو الفقار`). `scripts/migrat
 works around it by passing `--schema` and `--url` on the command line, so prefer
 `pnpm run migrate` over calling `drizzle-kit push` directly.
 
-## No seed data
+## Seeding
 
-A fresh database has the right schema but **no content** — no curriculum,
-lessons, vocabulary, placement questions, or subscription plans. `/api/levels`
-returns an empty list. You can register and log in, but there is nothing to
-study. See [ARCHITECTURE.md](ARCHITECTURE.md#database-seed-data).
+`docker compose up` creates the schema but leaves the database empty. An empty
+database is a **dead end for students**: a new account has no level, the only
+way to get one is the placement test, and the placement test has no questions —
+so every level and lesson stays locked forever.
+
+Seed the baseline data:
+
+```
+pnpm run seed
+```
+
+That adds 3 subscription plans, 2 languages, the CEFR curriculum, 12 levels
+(A1.1–C2.2), and a 10-question placement test. It is idempotent, so re-running
+it is safe.
+
+It does **not** add lessons or vocabulary — author those in the CMS at `/cms`
+as a user with the `content_manager` or `admin` role.

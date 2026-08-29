@@ -7,7 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Lock, Unlock, CheckCircle2, ChevronLeft, Target } from "lucide-react";
 
 export default function Learn() {
-  const { data: levels, isLoading, error } = useGetLevels();
+  const { data: levelsResponse, isLoading, error } = useGetLevels();
+  const levels = levelsResponse?.levels;
   const { data: dashboard } = useGetDashboard();
 
   if (isLoading) {

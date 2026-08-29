@@ -6,3 +6,4 @@ export * from "./placement";
 export * from "./subscriptions";
 export * from "./sessions";
 export * from "./cms";
+export * from "./quizzes";

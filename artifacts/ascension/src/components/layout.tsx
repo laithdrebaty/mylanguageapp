@@ -41,7 +41,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div dir="rtl" className="min-h-[100dvh] flex flex-col bg-background pb-16 md:pb-0 md:pl-64">
+    <div dir="rtl" className="min-h-[100dvh] flex flex-col bg-background pb-16 md:pb-0 md:pr-64">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col fixed top-0 right-0 w-64 h-[100dvh] bg-card border-l border-border z-40">
         <div className="p-6 flex items-center gap-3 border-b border-border">

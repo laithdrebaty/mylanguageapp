@@ -10,7 +10,8 @@
     "dev": "docker compose up",
     "dev:down": "docker compose down",
     "dev:reset": "docker compose down -v && docker compose up --build",
-    "migrate": "pnpm --filter @workspace/scripts run migrate"
+    "migrate": "pnpm --filter @workspace/scripts run migrate",
+    "seed": "pnpm --filter @workspace/scripts run seed"
   },
   "private": true,
   "devDependencies": {

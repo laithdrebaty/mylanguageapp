@@ -74,7 +74,13 @@ export type Lesson = typeof lessonsTable.$inferSelect;
  */
 export const contentBlocksTable = pgTable("content_blocks", {
   id: serial("id").primaryKey(),
-  lessonId: integer("lesson_id").notNull().references(() => lessonsTable.id, { onDelete: "cascade" }),
+  /**
+   * A block belongs to EITHER a lesson OR a quiz — exactly one of these is
+   * set, enforced by the content_blocks_parent_ck CHECK constraint.
+   * quizId is untyped here to avoid a circular import with ./quizzes.
+   */
+  lessonId: integer("lesson_id").references(() => lessonsTable.id, { onDelete: "cascade" }),
+  quizId: integer("quiz_id"),
   type: text("type").notNull(),
   order: integer("order").notNull(),
   title: text("title"),

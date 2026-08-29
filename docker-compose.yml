@@ -27,6 +27,11 @@ services:
       db:
         condition: service_healthy
     restart: 'no'
+    volumes:
+      # Pick up schema and SQL migration edits without rebuilding the image.
+      - ./artifacts/api-server/migrations:/app/artifacts/api-server/migrations
+      - ./lib/db/src:/app/lib/db/src
+      - ./scripts/migrate.mjs:/app/scripts/migrate.mjs
 
   api:
     build:
@@ -58,6 +63,9 @@ services:
       BASE_PATH: /
       # The app calls relative /api paths; Vite proxies them to the api service.
       API_PROXY_TARGET: http://api:8080
+      # Host file events do not reach the container through a bind mount on
+      # Windows/macOS; poll instead so hot reload works.
+      VITE_USE_POLLING: '1'
     ports:
       - '5173:5173'
     depends_on:

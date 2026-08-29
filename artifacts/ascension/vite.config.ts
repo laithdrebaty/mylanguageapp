@@ -49,6 +49,14 @@ export default defineConfig({
         changeOrigin: false,
       },
     },
+    // Filesystem events do not cross a Docker bind mount on Windows or macOS,
+    // so the dev server never sees host edits and hot reload silently stops
+    // working. Polling is the only reliable watcher there; it costs CPU, so it
+    // stays opt-in and off for native runs.
+    watch:
+      process.env.VITE_USE_POLLING === '1'
+        ? { usePolling: true, interval: 300 }
+        : undefined,
     fs: {
       strict: true,
     },

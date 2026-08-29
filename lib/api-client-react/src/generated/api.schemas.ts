@@ -212,6 +212,21 @@ export interface Level {
   isCompleted: boolean;
 }
 
+export interface CurriculumSummary {
+  id: number;
+  name: string;
+  nameInLearnerLanguage: string;
+  targetLanguageCode: string;
+  learnerLanguageCode: string;
+  /** @nullable */
+  levelFramework?: string | null;
+}
+
+export interface LevelsResponse {
+  curriculum?: CurriculumSummary | null;
+  levels: Level[];
+}
+
 export type LessonSummaryLessonType = typeof LessonSummaryLessonType[keyof typeof LessonSummaryLessonType];
 
 

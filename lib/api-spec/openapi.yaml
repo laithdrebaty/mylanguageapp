@@ -229,16 +229,14 @@ paths:
     get:
       operationId: getLevels
       tags: [levels]
-      summary: List all curriculum levels
+      summary: List all curriculum levels for the current student
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Level"
+                $ref: "#/components/schemas/LevelsResponse"
 
   /levels/{levelId}:
     get:
@@ -1118,6 +1116,36 @@ components:
           type: boolean
         isCompleted:
           type: boolean
+
+    CurriculumSummary:
+      type: object
+      required: [id, name, nameInLearnerLanguage, targetLanguageCode, learnerLanguageCode]
+      properties:
+        id:
+          type: number
+        name:
+          type: string
+        nameInLearnerLanguage:
+          type: string
+        targetLanguageCode:
+          type: string
+        learnerLanguageCode:
+          type: string
+        levelFramework:
+          type: ["string", "null"]
+
+    LevelsResponse:
+      type: object
+      required: [levels]
+      properties:
+        curriculum:
+          oneOf:
+            - $ref: "#/components/schemas/CurriculumSummary"
+            - type: "null"
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Level"
 
     LevelDetail:
       type: object

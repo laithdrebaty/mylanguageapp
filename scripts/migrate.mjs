@@ -48,7 +48,7 @@ function pushDrizzleSchema() {
   // Schema and url are passed explicitly rather than via drizzle.config.ts:
   // the config resolves its schema path with __dirname, which breaks when the
   // project lives under a path containing non-ASCII characters.
-  execFileSync(
+  const output = execFileSync(
     'pnpm',
     [
       '--filter', '@workspace/db', 'exec', 'drizzle-kit', 'push',
@@ -57,8 +57,27 @@ function pushDrizzleSchema() {
       '--schema=./src/schema/index.ts',
       `--url=${databaseUrl}`,
     ],
-    { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' },
+    {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    },
   );
+
+  process.stdout.write(output);
+
+  // drizzle-kit exits 0 even when the push fails — notably when a structural
+  // change (dropping a NOT NULL, renaming a column) triggers an interactive
+  // confirmation that cannot be answered without a TTY. Trusting the exit code
+  // alone lets the schema silently drift from the code. Scan the output too.
+  if (/Interactive prompts require a TTY|^Error:/m.test(output)) {
+    throw new Error(
+      'drizzle-kit push did not complete: it needs an interactive prompt for a ' +
+        'structural change (exit code 0 is not trustworthy here). Express that ' +
+        'change as a SQL file in artifacts/api-server/migrations instead.',
+    );
+  }
 }
 
 async function applySqlMigrations() {

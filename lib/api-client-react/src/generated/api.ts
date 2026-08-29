@@ -43,8 +43,8 @@ import type {
   LessonDetail,
   LessonProgress,
   LessonSummary,
-  Level,
   LevelDetail,
+  LevelsResponse,
   LoginInput,
   PlacementTest,
   PlacementTestResult,
@@ -760,11 +760,11 @@ export const getGetLevelsUrl = () => {
 }
 
 /**
- * @summary List all curriculum levels
+ * @summary List all curriculum levels for the current student
  */
-export const getLevels = async ( options?: Parameters<typeof customFetch>[1]): Promise<Level[]> => {
+export const getLevels = async ( options?: Parameters<typeof customFetch>[1]): Promise<LevelsResponse> => {
 
-  return customFetch<Level[]>(getGetLevelsUrl(),
+  return customFetch<LevelsResponse>(getGetLevelsUrl(),
   {
     ...options,
     method: 'GET'
@@ -807,7 +807,7 @@ export type GetLevelsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List all curriculum levels
+ * @summary List all curriculum levels for the current student
  */
 
 export function useGetLevels<TData = Awaited<ReturnType<typeof getLevels>>, TError = ErrorType<unknown>>(

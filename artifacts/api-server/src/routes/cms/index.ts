@@ -6,6 +6,7 @@ import catalogRouter from "./catalog";
 import vocabRouter from "./vocab";
 import mediaRouter from "./media";
 import reviewsRouter from "./reviews";
+import quizzesRouter from "./quizzes";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(catalogRouter);
 router.use(vocabRouter);
 router.use(mediaRouter);
 router.use(reviewsRouter);
+router.use(quizzesRouter);
 
 export default router;
