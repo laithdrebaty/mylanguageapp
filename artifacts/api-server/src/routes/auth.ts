@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db, usersTable, studentProfilesTable, curriculaTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { validate, registerSchema } from "../lib/validate";
 
 const router: IRouter = Router();
 
@@ -18,16 +19,9 @@ async function getDefaultCurriculumId(): Promise<number | null> {
 }
 
 router.post("/auth/register", async (req, res): Promise<void> => {
-  const { name, email, password, preferredLanguage = "ar", country = "SY" } = req.body;
-
-  if (!name || !email || !password) {
-    res.status(400).json({ error: "Name, email and password are required" });
-    return;
-  }
-  if (password.length < 6) {
-    res.status(400).json({ error: "Password must be at least 6 characters" });
-    return;
-  }
+  const body = validate(res, registerSchema, req.body);
+  if (!body) return; // response already sent (400 with details)
+  const { name, email, password, preferredLanguage, country } = body;
 
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1);
   if (existing) {

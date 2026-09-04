@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -5,23 +6,54 @@ import * as z from "zod";
 import { useRegister, RegisterInputPreferredLanguage } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { BookOpen, Loader2 } from "lucide-react";
+import { BookOpen, Loader2, Eye, EyeOff } from "lucide-react";
+
+// Keep this in sync with the weak-password list in artifacts/api-server/src/lib/validate.ts
+// so the browser catches the same obviously-weak passwords before hitting the server.
+const WEAK_PASSWORDS = new Set([
+  "password",
+  "password1",
+  "password123",
+  "12345678",
+  "123456789",
+  "1234567890",
+  "qwerty123",
+  "letmein123",
+  "welcome123",
+  "iloveyou1",
+  "admin1234",
+  "changeme1",
+]);
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "الاسم يجب أن يكون حرفين على الأقل" }),
   email: z.string().email({ message: "الرجاء إدخال بريد إلكتروني صحيح" }),
-  password: z.string().min(6, { message: "كلمة المرور يجب أن تكون 6 محارف على الأقل" }),
+  password: z
+    .string()
+    .min(8, { message: "كلمة المرور يجب أن تكون 8 محارف على الأقل" })
+    .regex(/[a-zA-Z]/, { message: "كلمة المرور يجب أن تحتوي على حرف واحد على الأقل" })
+    .regex(/[0-9]/, { message: "كلمة المرور يجب أن تحتوي على رقم واحد على الأقل" })
+    .refine((value) => !WEAK_PASSWORDS.has(value.toLowerCase()), {
+      message: "كلمة المرور هذه شائعة جداً، الرجاء اختيار كلمة مرور أقوى",
+    }),
+  confirmPassword: z.string().min(1, { message: "الرجاء تأكيد كلمة المرور" }),
   preferredLanguage: z.nativeEnum(RegisterInputPreferredLanguage).default(RegisterInputPreferredLanguage.ar),
-  country: z.string().default("Syria"),
+  country: z.string().length(2).default("SY"),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "كلمتا المرور غير متطابقتين",
+  path: ["confirmPassword"],
 });
 
 export default function Register() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const register = useRegister();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -29,14 +61,18 @@ export default function Register() {
       name: "",
       email: "",
       password: "",
+      confirmPassword: "",
       preferredLanguage: RegisterInputPreferredLanguage.ar,
-      country: "Syria",
+      country: "SY",
     },
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
+    // confirmPassword only exists to check the two password fields match in
+    // the browser — the backend only ever sees "password".
+    const { confirmPassword: _confirmPassword, ...data } = values;
     register.mutate(
-      { data: values },
+      { data },
       {
         onSuccess: () => {
           toast({
@@ -45,11 +81,25 @@ export default function Register() {
           });
           setLocation("/placement");
         },
-        onError: () => {
+        onError: (error) => {
+          // The server sends back the real reason the request failed (e.g.
+          // "email already registered", or a list of field validation
+          // errors) — show that instead of always guessing "email taken".
+          const data = error?.data as
+            | { error?: string; details?: Array<{ message?: string }> }
+            | null
+            | undefined;
+          const description =
+            data?.details
+              ?.map((d) => d.message)
+              .filter((message): message is string => Boolean(message))
+              .join("، ") ||
+            data?.error ||
+            "حدث خطأ غير متوقع، الرجاء المحاولة مرة أخرى";
           toast({
             variant: "destructive",
             title: "خطأ في إنشاء الحساب",
-            description: "قد يكون البريد الإلكتروني مستخدماً بالفعل",
+            description,
           });
         },
       }
@@ -115,7 +165,51 @@ export default function Register() {
                   <FormItem>
                     <FormLabel>كلمة المرور (Password)</FormLabel>
                     <FormControl>
-                      <Input type="password" dir="ltr" className="text-left" {...field} />
+                      <InputGroup dir="ltr">
+                        <InputGroupInput
+                          type={showPassword ? "text" : "password"}
+                          className="text-left"
+                          {...field}
+                        />
+                        <InputGroupAddon align="inline-end">
+                          <InputGroupButton
+                            type="button"
+                            aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                            onClick={() => setShowPassword((prev) => !prev)}
+                          >
+                            {showPassword ? <EyeOff /> : <Eye />}
+                          </InputGroupButton>
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="confirmPassword"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>تأكيد كلمة المرور (Confirm Password)</FormLabel>
+                    <FormControl>
+                      <InputGroup dir="ltr">
+                        <InputGroupInput
+                          type={showConfirmPassword ? "text" : "password"}
+                          className="text-left"
+                          {...field}
+                        />
+                        <InputGroupAddon align="inline-end">
+                          <InputGroupButton
+                            type="button"
+                            aria-label={showConfirmPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                            onClick={() => setShowConfirmPassword((prev) => !prev)}
+                          >
+                            {showConfirmPassword ? <EyeOff /> : <Eye />}
+                          </InputGroupButton>
+                        </InputGroupAddon>
+                      </InputGroup>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -158,8 +252,8 @@ export default function Register() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Syria">سوريا</SelectItem>
-                          <SelectItem value="Other">أخرى</SelectItem>
+                          <SelectItem value="SY">سوريا</SelectItem>
+                          <SelectItem value="XX">أخرى</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
