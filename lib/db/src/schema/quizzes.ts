@@ -33,6 +33,27 @@ export const quizzesTable = pgTable("quizzes", {
   /** Optional placement in the curriculum. A quiz can stand alone. */
   levelId: integer("level_id").references(() => levelsTable.id),
 
+  /**
+   * What this quiz is for.
+   *
+   *   practice          — ordinary quiz, no effect on the student's level
+   *   level_evaluation  — the gate at the end of a level (spec section 10).
+   *                       Passing it promotes the student to the next level.
+   *
+   * A level_evaluation MUST carry a levelId, and a level may have at most one
+   * published evaluation. Both invariants are enforced in the database.
+   */
+  kind: text("kind", { enum: ["practice", "level_evaluation"] })
+    .notNull()
+    .default("practice"),
+
+  /**
+   * Hours a student must wait after a failed attempt before retrying.
+   * Null = retry immediately. Only meaningful for level_evaluation quizzes,
+   * where the point is to send the student back to the curriculum first.
+   */
+  cooldownHours: integer("cooldown_hours"),
+
   /** Null = untimed. Otherwise the whole attempt must finish within this. */
   timeLimitSec: integer("time_limit_sec"),
   /** Null = unlimited retries. */
@@ -118,6 +139,8 @@ export const quizResponsesTable = pgTable("quiz_responses", {
   response: jsonb("response"),
   /** Uploaded audio/video for speaking blocks — a media_assets key. */
   mediaKey: text("media_key"),
+  /** The same upload as a real reference. Preferred over `mediaKey`. */
+  mediaAssetId: integer("media_asset_id"),
   /** Speech-to-text output, once transcription completes. */
   transcript: text("transcript"),
 
@@ -130,6 +153,22 @@ export const quizResponsesTable = pgTable("quiz_responses", {
 
   /** Provider/model/token accounting for any AI call made on this response. */
   aiMeta: jsonb("ai_meta"),
+
+  /** 0-100, from aligning the transcript against the passage. Null when open speaking. */
+  pronunciationScore: real("pronunciation_score"),
+  /** 0-100, from the word timings. */
+  fluencyScore: real("fluency_score"),
+  /** Rate, pauses, run length, and the word-by-word alignment. */
+  speechMetrics: jsonb("speech_metrics"),
+
+  /** How many times grading has been tried. Caps the sweeper's retries. */
+  gradingAttempts: integer("grading_attempts").notNull().default(0),
+  lastGradingError: text("last_grading_error"),
+  lastGradedAt: timestamp("last_graded_at", { withTimezone: true }),
+  /** Which member of staff marked it, when a human did. */
+  gradedByUserId: integer("graded_by_user_id").references(() => usersTable.id, {
+    onDelete: "set null",
+  }),
 
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

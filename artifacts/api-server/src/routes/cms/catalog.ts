@@ -109,9 +109,21 @@ router.post("/cms/levels", requireAdmin, async (req, res): Promise<void> => {
 router.patch("/cms/levels/:id", requireAdmin, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
-  const allowed = ["code", "name", "nameAr", "description", "descriptionAr", "order"];
+  const allowed = [
+    "code", "name", "nameAr", "description", "descriptionAr", "order",
+    "evaluationUnlockPercent",
+  ];
   const update: Record<string, unknown> = {};
   for (const f of allowed) { if (req.body[f] !== undefined) update[f] = req.body[f]; }
+
+  if ("evaluationUnlockPercent" in update) {
+    const pct = update.evaluationUnlockPercent;
+    if (typeof pct !== "number" || !Number.isInteger(pct) || pct < 0 || pct > 100) {
+      res.status(400).json({ error: "evaluationUnlockPercent must be a whole number between 0 and 100" });
+      return;
+    }
+  }
+
   const [level] = await db.update(levelsTable).set(update).where(eq(levelsTable.id, id)).returning();
   if (!level) { res.status(404).json({ error: "Level not found" }); return; }
   await audit(req.session.userId!, "update", "level", id, null, null);

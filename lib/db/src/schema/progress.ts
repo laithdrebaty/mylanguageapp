@@ -100,6 +100,11 @@ export const learningActivityAttemptsTable = pgTable("learning_activity_attempts
   responseText: text("response_text"),
   /** Storage key for recorded media (speaking / pronunciation) */
   mediaReference: text("media_reference"),
+  /**
+   * The uploaded recording for this attempt. Preferred over `mediaReference`,
+   * which predates real uploads and holds whatever string a client sent.
+   */
+  mediaAssetId: integer("media_asset_id"),
   /** Duration of audio recording in seconds */
   recordingDurationSeconds: integer("recording_duration_seconds"),
   /** Server-graded correctness (null for pending / non-gradable) */
@@ -116,6 +121,34 @@ export const learningActivityAttemptsTable = pgTable("learning_activity_attempts
     enum: ["graded", "pending", "skipped"],
   }).notNull().default("graded"),
   /** Arbitrary metadata (client timing, retries, etc.) */
+  /** Feedback from an AI or a teacher, in the target and learner languages. */
+  feedback: text("feedback"),
+  feedbackAr: text("feedback_ar"),
+  /** auto | ai | teacher | pending — who decided the score above. */
+  gradedBy: text("graded_by", { enum: ["auto", "ai", "teacher", "pending"] })
+    .notNull()
+    .default("auto"),
+  /** Provider/model/token accounting for any AI call made on this attempt. */
+  aiMeta: jsonb("ai_meta"),
+
+  /** What the speech recogniser heard — the evidence behind a speaking score. */
+  transcript: text("transcript"),
+  /** 0-100, from aligning the transcript against the passage. Null when open speaking. */
+  pronunciationScore: real("pronunciation_score"),
+  /** 0-100, from the word timings. */
+  fluencyScore: real("fluency_score"),
+  /** Rate, pauses, run length, and the word-by-word alignment. */
+  speechMetrics: jsonb("speech_metrics"),
+
+  /** How many times grading has been tried. Caps the sweeper's retries. */
+  gradingAttempts: integer("grading_attempts").notNull().default(0),
+  lastGradingError: text("last_grading_error"),
+  lastGradedAt: timestamp("last_graded_at", { withTimezone: true }),
+  /** Which member of staff marked it, when a human did. */
+  gradedByUserId: integer("graded_by_user_id").references(() => usersTable.id, {
+    onDelete: "set null",
+  }),
+
   metadata: jsonb("metadata"),
   submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

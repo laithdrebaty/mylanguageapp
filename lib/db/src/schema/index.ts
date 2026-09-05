@@ -7,3 +7,6 @@ export * from "./subscriptions";
 export * from "./sessions";
 export * from "./cms";
 export * from "./quizzes";
+export * from "./progression";
+export * from "./ai";
+export * from "./conversation";

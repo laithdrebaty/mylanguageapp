@@ -14,6 +14,10 @@ import adminRouter from "./admin";
 import languagesRouter from "./languages";
 import cmsRouter from "./cms";
 import quizzesRouter from "./quizzes";
+import progressionRouter from "./progression";
+import mediaRouter from "./media";
+import adminAiRouter from "./admin-ai";
+import conversationRouter from "./conversation";
 
 const router: IRouter = Router();
 
@@ -31,6 +35,10 @@ router.use(reviewRouter);
 router.use(adminRouter);
 router.use(languagesRouter);
 router.use(quizzesRouter);
+router.use(progressionRouter);
+router.use(mediaRouter);
+router.use(adminAiRouter);
+router.use(conversationRouter);
 router.use(cmsRouter);
 
 export default router;

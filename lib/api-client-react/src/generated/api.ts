@@ -44,12 +44,14 @@ import type {
   LessonProgress,
   LessonSummary,
   LevelDetail,
+  LevelEvaluationResponse,
   LevelsResponse,
   LoginInput,
   PlacementTest,
   PlacementTestResult,
   PlacementTestSubmission,
   ProfileUpdate,
+  ProgressionHistoryResponse,
   RegisterInput,
   StudentProfile,
   StudentSubscription,
@@ -893,6 +895,161 @@ export function useGetLevel<TData = Awaited<ReturnType<typeof getLevel>>, TError
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetLevelQueryOptions(levelId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetLevelEvaluationUrl = (levelId: number,) => {
+
+
+
+
+  return `/api/levels/${levelId}/evaluation`
+}
+
+/**
+ * Always 200 for a level that exists. A closed gate is a normal state to render, not an error. `evaluation` is null when the curriculum team has not published an evaluation for this level yet.
+ * @summary The evaluation gate on a level, and whether this student may sit it
+ */
+export const getLevelEvaluation = async (levelId: number, options?: Parameters<typeof customFetch>[1]): Promise<LevelEvaluationResponse> => {
+
+  return customFetch<LevelEvaluationResponse>(getGetLevelEvaluationUrl(levelId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLevelEvaluationQueryKey = (levelId: number,) => {
+    return [
+    `/api/levels/${levelId}/evaluation`
+    ] as const;
+    }
+
+
+export const getGetLevelEvaluationQueryOptions = <TData = Awaited<ReturnType<typeof getLevelEvaluation>>, TError = ErrorType<ErrorResponse>>(levelId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLevelEvaluation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLevelEvaluationQueryKey(levelId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLevelEvaluation>>> = ({ signal }) => getLevelEvaluation(levelId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: levelId !== null && levelId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLevelEvaluation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLevelEvaluationQueryResult = NonNullable<Awaited<ReturnType<typeof getLevelEvaluation>>>
+export type GetLevelEvaluationQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary The evaluation gate on a level, and whether this student may sit it
+ */
+
+export function useGetLevelEvaluation<TData = Awaited<ReturnType<typeof getLevelEvaluation>>, TError = ErrorType<ErrorResponse>>(
+ levelId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLevelEvaluation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLevelEvaluationQueryOptions(levelId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetProgressionUrl = () => {
+
+
+
+
+  return `/api/progression`
+}
+
+/**
+ * @summary Every level change this student has been through, newest first
+ */
+export const getProgression = async ( options?: Parameters<typeof customFetch>[1]): Promise<ProgressionHistoryResponse> => {
+
+  return customFetch<ProgressionHistoryResponse>(getGetProgressionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProgressionQueryKey = () => {
+    return [
+    `/api/progression`
+    ] as const;
+    }
+
+
+export const getGetProgressionQueryOptions = <TData = Awaited<ReturnType<typeof getProgression>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProgression>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProgressionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProgression>>> = ({ signal }) => getProgression({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProgression>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProgressionQueryResult = NonNullable<Awaited<ReturnType<typeof getProgression>>>
+export type GetProgressionQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Every level change this student has been through, newest first
+ */
+
+export function useGetProgression<TData = Awaited<ReturnType<typeof getProgression>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProgression>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProgressionQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

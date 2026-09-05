@@ -1,14 +1,19 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useGetAdminStudents } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PlacementReview } from "@/components/placement-review";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
 
 export default function AdminStudents() {
   const [page, setPage] = useState(1);
+  // Which student's placement is open. One at a time: each panel fetches its
+  // own review, and expanding them all would be a query per row.
+  const [openStudent, setOpenStudent] = useState<number | null>(null);
   const limit = 10;
   
   const { data, isLoading, error } = useGetAdminStudents({ page, limit });
@@ -48,22 +53,49 @@ export default function AdminStudents() {
                 <TableHead className="text-right">البريد الإلكتروني</TableHead>
                 <TableHead className="text-right">البلد</TableHead>
                 <TableHead className="text-right">تاريخ الانضمام</TableHead>
+                <TableHead className="text-right">المستوى</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.students.map((student) => (
-                <TableRow key={student.id}>
-                  <TableCell className="font-medium">{student.name}</TableCell>
-                  <TableCell className="text-muted-foreground font-mono" dir="ltr">{student.email}</TableCell>
-                  <TableCell>{student.country || "-"}</TableCell>
-                  <TableCell>
-                    {format(new Date(student.createdAt), "d MMM yyyy", { locale: ar })}
-                  </TableCell>
-                </TableRow>
+                <Fragment key={student.id}>
+                  <TableRow>
+                    <TableCell className="font-medium">{student.name}</TableCell>
+                    <TableCell className="text-muted-foreground font-mono" dir="ltr">{student.email}</TableCell>
+                    <TableCell>{student.country || "-"}</TableCell>
+                    <TableCell>
+                      {format(new Date(student.createdAt), "d MMM yyyy", { locale: ar })}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1"
+                        onClick={() =>
+                          setOpenStudent((id) => (id === student.id ? null : student.id))
+                        }
+                      >
+                        {openStudent === student.id ? (
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        )}
+                        مراجعة
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  {openStudent === student.id && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="p-3">
+                        <PlacementReview studentId={student.id} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               ))}
               {data.students.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     لا يوجد طلاب لعرضهم
                   </TableCell>
                 </TableRow>

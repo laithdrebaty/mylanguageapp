@@ -3,6 +3,7 @@ import { useGetLevel } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LevelEvaluationCard } from "@/components/level-evaluation-card";
 import { Progress } from "@/components/ui/progress";
 import {
   ArrowRight,
@@ -208,6 +209,11 @@ export default function Level({ params }: { params: { levelId: string } }) {
             </Link>
           );
         })}
+
+        {/* The gate out of this level, once its lessons are done. */}
+        <div className="pt-4">
+          <LevelEvaluationCard levelId={levelId} />
+        </div>
       </div>
     </div>
   );

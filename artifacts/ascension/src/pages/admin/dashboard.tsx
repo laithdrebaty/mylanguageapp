@@ -116,6 +116,20 @@ export default function AdminDashboard() {
             </CardContent>
           </Link>
         </Card>
+
+        <Card className="hover:border-primary/50 transition-colors">
+          <Link href="/admin/ai" className="block h-full">
+            <CardHeader>
+              <CardTitle className="flex justify-between items-center text-xl">
+                <span>إعدادات الذكاء الاصطناعي</span>
+                <ChevronLeft className="h-5 w-5 text-muted-foreground" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">المزوّد ومفتاح الـ API والنماذج والحدود اليومية لكل خطة — تُعدَّل مباشرة دون إعادة نشر.</p>
+            </CardContent>
+          </Link>
+        </Card>
       </div>
     </div>
   );

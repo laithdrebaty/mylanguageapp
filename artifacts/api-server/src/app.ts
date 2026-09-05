@@ -1,4 +1,10 @@
-import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+  type RequestHandler,
+} from "express";
 import cors from "cors";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -11,6 +17,8 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
 import { redis } from "./services/redis";
+// Side-effect import: registers the handlers the background queue dispatches to.
+import "./services/job-handlers";
 
 const app: Express = express();
 
@@ -89,10 +97,17 @@ app.use(
  * - Redis unavailable → default in-process store: per-instance limits only;
  *   acceptable for single-server development.
  *
- * Failure behavior: if Redis goes down mid-flight, rate-limit-redis silently
- * falls through to the next middleware (fail open). This is acceptable for
- * general API protection. AI quota uses a stricter fail-closed mechanism
+ * Failure behavior: fail OPEN. A Redis problem must not stop people using the
+ * app — rate limiting is abuse protection, not correctness. AI quota is the
+ * opposite and fails closed, because unlimited paid AI costs real money
  * (see services/ai-quota.ts).
+ *
+ * This does not happen by itself. The ioredis client is created with
+ * `enableOfflineQueue: false`, so any command issued while it is connecting or
+ * disconnected throws synchronously; rate-limit-redis passes that error on, and
+ * express-rate-limit turns it into a 500. Left alone, every request during the
+ * first moments after a restart — and every request during a Redis blip —
+ * answers 500 rather than being allowed through. Hence `failOpen` below.
  */
 function makeRedisStore(prefix: string): RedisStore | undefined {
   if (!redis) return undefined;
@@ -102,6 +117,31 @@ function makeRedisStore(prefix: string): RedisStore | undefined {
     sendCommand: ((...args: string[]) =>
       (redis as InstanceType<typeof import("ioredis").default>).call(args[0], ...args.slice(1))) as SendCommandFn,
   });
+}
+
+/**
+ * Let a request through when the rate-limit store cannot answer.
+ *
+ * express-rate-limit reports a store failure by calling `next(err)`. Swallowing
+ * it and calling `next()` is what "fail open" actually means here — without
+ * this the documented behaviour above is not the real behaviour.
+ */
+function failOpen(limiter: RequestHandler): RequestHandler {
+  return (req, res, next) => {
+    try {
+      limiter(req, res, (err?: unknown) => {
+        if (err) {
+          logger.warn({ err }, "Rate limit store unavailable — allowing the request");
+          next();
+          return;
+        }
+        next();
+      });
+    } catch (err) {
+      logger.warn({ err }, "Rate limit store threw — allowing the request");
+      next();
+    }
+  };
 }
 
 // Broad limit: all API endpoints — protects against general abuse
@@ -125,9 +165,9 @@ const authLimiter = rateLimit({
   message: { error: "Too many authentication attempts, please try again later" },
 });
 
-app.use("/api", apiLimiter);
-app.use("/api/auth/login", authLimiter);
-app.use("/api/auth/register", authLimiter);
+app.use("/api", failOpen(apiLimiter));
+app.use("/api/auth/login", failOpen(authLimiter));
+app.use("/api/auth/register", failOpen(authLimiter));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api", router);

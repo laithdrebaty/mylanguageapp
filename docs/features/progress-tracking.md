@@ -1,3 +1,8 @@
+> **Update.** Strengths, weaknesses and per-skill scores are now computed from
+> recorded marks and shown on the student dashboard — see
+> [weakness-engine.md](weakness-engine.md). The rest of this document still
+> describes the lesson/XP/streak side of progress accurately.
+
 # Feature: Progress Tracking & Dashboard
 
 ## What it does

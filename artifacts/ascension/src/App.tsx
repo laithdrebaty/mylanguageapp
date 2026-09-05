@@ -15,12 +15,14 @@ import Placement from '@/pages/placement';
 import Learn from '@/pages/learn';
 import Level from '@/pages/level';
 import Lesson from '@/pages/lesson';
+import Quiz from '@/pages/quiz';
 import Vocabulary from '@/pages/vocabulary';
 import Subscription from '@/pages/subscription';
 import Profile from '@/pages/profile';
 import AdminDashboard from '@/pages/admin/dashboard';
 import AdminStudents from '@/pages/admin/students';
 import AdminLessons from '@/pages/admin/lessons';
+import AdminAiSettings from '@/pages/admin/ai-settings';
 
 // CMS pages
 import CMSDashboard from '@/pages/cms/index';
@@ -31,6 +33,9 @@ import { LanguagesPage, CurriculaPage, LevelsPage } from '@/pages/cms/catalog';
 import VocabularyPage from '@/pages/cms/vocabulary';
 import MediaPage from '@/pages/cms/media';
 import ReviewsPage from '@/pages/cms/reviews';
+import CMSQuizzesList from '@/pages/cms/quizzes-list';
+import CMSGradingQueue from '@/pages/cms/grading';
+import CMSQuizEditor from '@/pages/cms/quiz-editor';
 import AuditLogPage from '@/pages/cms/audit';
 
 const queryClient = new QueryClient();
@@ -59,6 +64,7 @@ function Router() {
         <ProtectedRoute path="/learn" component={Learn} />
         <ProtectedRoute path="/learn/:levelId" component={Level} />
         <ProtectedRoute path="/lesson/:lessonId" component={Lesson} />
+        <ProtectedRoute path="/quiz/:quizId" component={Quiz} />
         <ProtectedRoute path="/vocabulary" component={Vocabulary} />
         <ProtectedRoute path="/subscription" component={Subscription} />
         <ProtectedRoute path="/profile" component={Profile} />
@@ -67,6 +73,7 @@ function Router() {
         <ProtectedRoute path="/admin" component={AdminDashboard} requireAdmin />
         <ProtectedRoute path="/admin/students" component={AdminStudents} requireAdmin />
         <ProtectedRoute path="/admin/lessons" component={AdminLessons} requireAdmin />
+        <ProtectedRoute path="/admin/ai" component={AdminAiSettings} requireAdmin />
 
         {/* CMS routes — accessible to admin | content_manager | content_reviewer */}
         <ProtectedRoute path="/cms" component={CMSDashboard} requireCMS />
@@ -77,8 +84,11 @@ function Router() {
         <ProtectedRoute path="/cms/languages" component={LanguagesPage} requireCMS />
         <ProtectedRoute path="/cms/curricula" component={CurriculaPage} requireCMS />
         <ProtectedRoute path="/cms/levels" component={LevelsPage} requireCMS />
+        <ProtectedRoute path="/cms/quizzes" component={CMSQuizzesList} requireCMS />
+        <ProtectedRoute path="/cms/quizzes/:id" component={CMSQuizEditor} requireCMS />
         <ProtectedRoute path="/cms/vocabulary" component={VocabularyPage} requireCMS />
         <ProtectedRoute path="/cms/media" component={MediaPage} requireCMS />
+        <ProtectedRoute path="/cms/grading" component={CMSGradingQueue} requireCMS />
         <ProtectedRoute path="/cms/reviews" component={ReviewsPage} requireCMS />
         <ProtectedRoute path="/cms/audit" component={AuditLogPage} requireCMS />
 

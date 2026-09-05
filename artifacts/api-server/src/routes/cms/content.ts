@@ -58,6 +58,7 @@ router.post("/cms/lessons/:lessonId/blocks", requireContentManager, async (req, 
     type, order, title, titleAr, instructions, instructionsAr,
     content, contentAr, audioNote, prompt, promptAr, exampleAudio,
     isRequired, estimatedMinutes, isActive, config,
+    expectsReferenceReading, referenceMediaId,
   } = req.body;
 
   if (!type || order === undefined) {
@@ -76,6 +77,8 @@ router.post("/cms/lessons/:lessonId/blocks", requireContentManager, async (req, 
     estimatedMinutes: estimatedMinutes ?? null,
     isActive: isActive !== undefined ? isActive : true,
     config: config ?? null,
+    expectsReferenceReading: expectsReferenceReading ?? false,
+    referenceMediaId: referenceMediaId ?? null,
   }).returning();
 
   await audit(req.session.userId!, "create", "content_block", block.id, null, null, { lessonId, type });
@@ -97,7 +100,10 @@ router.patch("/cms/lessons/:lessonId/blocks/:blockId", requireContentManager, as
 
   const allowed = ["type", "order", "title", "titleAr", "instructions", "instructionsAr",
     "content", "contentAr", "audioNote", "prompt", "promptAr", "exampleAudio",
-    "isRequired", "estimatedMinutes", "isActive", "config"];
+    "isRequired", "estimatedMinutes", "isActive", "config",
+    // Decides whether a spoken answer can be scored for pronunciation: without
+    // a set passage there is nothing to align a transcript against.
+    "expectsReferenceReading", "referenceMediaId"];
   const update: Record<string, unknown> = { updatedAt: new Date() };
   for (const f of allowed) {
     if (req.body[f] !== undefined) update[f] = req.body[f];

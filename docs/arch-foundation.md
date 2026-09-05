@@ -28,7 +28,7 @@ exercise_attempts(user_id), exercise_attempts(exercise_id).
 - N+1 in review: both routes now batch-fetch lessons and levels
 
 ### Service abstraction stubs
-- `services/ai.ts` — AIProvider interface + NotImplementedAIProvider; set AI_PROVIDER=openai to add real provider
+- `services/ai.ts` — shared AI result types only. Provider, model and limits are database rows edited at /admin/ai; see `services/ai-config.ts` and docs/features/ai-configuration.md. The old AI_PROVIDER env factory has been removed.
 - `services/cache.ts` — CacheProvider interface + InProcessCache; set CACHE_PROVIDER=redis for Redis
 - `services/jobs.ts` — JobQueue interface + FireAndForgetQueue; set JOB_QUEUE=bullmq for real queue
 - `lib/validate.ts` — Zod v3 validation helper + shared schemas (register, login, lessonComplete, etc.)

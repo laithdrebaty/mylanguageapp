@@ -14,6 +14,15 @@ export const levelsTable = pgTable("levels", {
   descriptionAr: text("description_ar"),
   order: integer("order").notNull(),
   totalLessons: integer("total_lessons").notNull().default(0),
+
+  /**
+   * How much of this level a student must finish before its evaluation test
+   * unlocks, as a percentage of the level's published lessons (spec section 10:
+   * "after completing the required lessons"). 100 = every lesson must be passed.
+   * Administrator-configurable per level.
+   */
+  evaluationUnlockPercent: integer("evaluation_unlock_percent").notNull().default(100),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   curriculumCodeUnique: uniqueIndex("levels_curriculum_code_unique").on(
@@ -95,6 +104,14 @@ export const contentBlocksTable = pgTable("content_blocks", {
   prompt: text("prompt"),
   promptAr: text("prompt_ar"),
   exampleAudio: text("example_audio"),
+  /** Uploaded reference recording for this block, when there is one. */
+  referenceMediaId: integer("reference_media_id"),
+  /**
+   * True when the student is reading a set passage, so pronunciation can be
+   * measured against `content`. False for open speaking, where only fluency
+   * can be measured — there is nothing to align a transcript to.
+   */
+  expectsReferenceReading: boolean("expects_reference_reading").notNull().default(false),
   /** Whether this block must be completed for lesson progression */
   isRequired: boolean("is_required").notNull().default(true),
   /** Estimated time for this block in minutes */

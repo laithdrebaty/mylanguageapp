@@ -23,8 +23,29 @@ import {
   isNonScoring,
   type QuizBlockConfig,
 } from "../services/quiz-grading";
+import { assertUsableRecording, MediaValidationError } from "../services/media";
+import { jobs } from "../services/jobs";
+import {
+  getEvaluationEligibility,
+  applyEvaluationOutcome,
+  getLevelRemediation,
+} from "../services/progression";
 
 const router: IRouter = Router();
+
+/**
+ * Why an evaluation is closed, in the student's language. Arabic is the UI
+ * language, so these read as the student sees them; the machine-readable `code`
+ * travels alongside for the client to branch on.
+ */
+const EVALUATION_BLOCKED_MESSAGES: Record<string, string> = {
+  NOT_PLACED: "أكمل اختبار تحديد المستوى أولاً.",
+  NO_EVALUATION: "لا يوجد اختبار تقييم لهذا المستوى بعد.",
+  NOT_CURRENT_LEVEL: "هذا الاختبار ليس لمستواك الحالي.",
+  LESSONS_INCOMPLETE: "أكمل دروس هذا المستوى قبل خوض اختبار التقييم.",
+  COOLDOWN: "راجع الدروس ثم أعد المحاولة لاحقاً.",
+  ATTEMPTS_EXHAUSTED: "لقد استنفدت محاولاتك في هذا الاختبار.",
+};
 
 /** Deterministic shuffle so a reload doesn't reorder mid-attempt. */
 function seededShuffle<T>(items: T[], seed: number): T[] {
@@ -159,6 +180,21 @@ router.post("/quizzes/:id/attempts", requireAuth, async (req, res): Promise<void
 
   if (active) { res.json({ ...active, resumed: true }); return; }
 
+  // A level evaluation is a gate, not an ordinary quiz: it opens only once the
+  // student has worked through the level it closes. Checked here rather than in
+  // the UI because it decides whether someone advances.
+  if (quiz.kind === "level_evaluation" && quiz.levelId !== null) {
+    const eligibility = await getEvaluationEligibility(userId, quiz.levelId);
+    if (!eligibility.eligible) {
+      res.status(403).json({
+        error: EVALUATION_BLOCKED_MESSAGES[eligibility.code ?? "NO_EVALUATION"],
+        code: eligibility.code,
+        eligibility,
+      });
+      return;
+    }
+  }
+
   if (quiz.maxAttempts !== null) {
     const [{ used }] = await db
       .select({ used: sql<number>`count(*)::int` })
@@ -208,7 +244,34 @@ router.put("/quiz-attempts/:attemptId/responses/:blockId", requireAuth, async (r
 
   if (!block) { res.status(404).json({ error: "Block not found on this quiz" }); return; }
 
-  const { response, mediaKey } = req.body;
+  const { response, mediaId } = req.body;
+
+  // A recording is accepted only after the server has confirmed it landed in
+  // the bucket and belongs to this student. `mediaKey` is derived from the
+  // verified asset rather than taken from the request, so a client cannot point
+  // a response at an object it does not own.
+  let mediaKey: string | null = null;
+  let mediaAssetId: number | null = null;
+  if (mediaId !== undefined && mediaId !== null) {
+    try {
+      const asset = await assertUsableRecording(
+        Number(mediaId),
+        req.session.userId!,
+        "quiz_response",
+      );
+      mediaKey = asset.key;
+      mediaAssetId = asset.id;
+    } catch (err) {
+      if (err instanceof MediaValidationError) {
+        res.status(err.code === "NOT_FOUND" ? 404 : 400).json({
+          error: err.message,
+          code: err.code,
+        });
+        return;
+      }
+      throw err;
+    }
+  }
 
   // Upsert — re-answering a block replaces the previous response.
   const [saved] = await db
@@ -216,11 +279,17 @@ router.put("/quiz-attempts/:attemptId/responses/:blockId", requireAuth, async (r
     .values({
       attemptId, blockId,
       response: response ?? null,
-      mediaKey: mediaKey ?? null,
+      mediaKey,
+      mediaAssetId,
     })
     .onConflictDoUpdate({
       target: [quizResponsesTable.attemptId, quizResponsesTable.blockId],
-      set: { response: response ?? null, mediaKey: mediaKey ?? null, updatedAt: new Date() },
+      set: {
+        response: response ?? null,
+        mediaKey,
+        mediaAssetId,
+        updatedAt: new Date(),
+      },
     })
     .returning();
 
@@ -277,7 +346,9 @@ router.post("/quiz-attempts/:attemptId/submit", requireAuth, async (req, res): P
       const points = blockPoints(config);
 
       const existing = byBlock.get(block.id);
-      const verdict = gradeResponse(block.type, config, existing?.response ?? null);
+      const verdict = gradeResponse(block.type, config, existing?.response ?? null, {
+        hasMedia: existing?.mediaAssetId != null,
+      });
 
       if (verdict.score === null) {
         pending += 1;
@@ -291,6 +362,7 @@ router.post("/quiz-attempts/:attemptId/submit", requireAuth, async (req, res): P
         blockId: block.id,
         response: existing?.response ?? null,
         mediaKey: existing?.mediaKey ?? null,
+        mediaAssetId: existing?.mediaAssetId ?? null,
         score: verdict.score,
         gradedBy: verdict.gradedBy,
         feedback: verdict.feedback,
@@ -336,14 +408,37 @@ router.post("/quiz-attempts/:attemptId/submit", requireAuth, async (req, res): P
     .where(eq(quizAttemptsTable.id, attemptId))
     .limit(1);
 
-  res.json({
+  const payload: Record<string, unknown> = {
     id: updated.id,
     status: updated.status,
     score: updated.score,
     passed: updated.passed,
     pendingReviewCount: updated.pendingReviewCount,
     passingScore: quiz?.passingScore ?? 75,
-  });
+  };
+
+  // A passed level evaluation moves the student up; a failed one sends them
+  // back to the lessons they scored worst on. Both are decided from data the
+  // server already has — no AI is involved in either.
+  if (quiz?.kind === "level_evaluation" && quiz.levelId !== null) {
+    payload.promotion = await applyEvaluationOutcome(attemptId);
+    if (updated.passed === false) {
+      payload.remediation = await getLevelRemediation(
+        updated.userId,
+        quiz.levelId,
+      );
+    }
+  }
+
+  res.json(payload);
+
+  // Written answers are graded after the response is sent. An exam with three
+  // of them is three model calls, and a submit must not hang on them; the
+  // attempt already reports how many blocks are outstanding, and the job
+  // re-finalises it — including promotion — when the verdicts land.
+  if (pending > 0) {
+    jobs.enqueue("grade_quiz_attempt", { attemptId });
+  }
 });
 
 /** Review a finished attempt. Answer keys appear only once it is submitted. */
@@ -399,6 +494,8 @@ router.get("/quiz-attempts/:attemptId", requireAuth, async (req, res): Promise<v
               score: submitted ? r.score : null,
               gradedBy: submitted ? r.gradedBy : null,
               feedback: submitted ? r.feedback : null,
+              // Arabic is the student's language, so this is the one they read.
+              feedbackAr: submitted ? r.feedbackAr : null,
             }
           : null,
       };

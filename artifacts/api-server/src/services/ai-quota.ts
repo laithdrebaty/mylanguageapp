@@ -12,12 +12,13 @@
  * requests because Redis is down would be extremely costly. Students see a
  * "service temporarily unavailable" message rather than unlimited access.
  *
- * PER-SUBSCRIPTION LIMITS (configurable via env vars)
- * ─────────────────────────────────────────────────────
- * free:                  0 AI requests/day (no AI access)
- * general_english:       AI_DAILY_LIMIT_GENERAL (default 5)  per day
- * professional_english:  AI_DAILY_LIMIT_PRO     (default 20) per day
- * admin:                 unlimited
+ * PER-PLAN, PER-TASK LIMITS
+ * ──────────────────────────
+ * Read from `ai_plan_policies` at call time and edited from the admin panel —
+ * see services/ai-config.ts. The commercial split is not settled, so pricing a
+ * new tier must be a row rather than a deploy. A plan/task pair with no policy
+ * row is denied: defaulting to "allowed" would make every task added later
+ * silently free for everyone.
  *
  * REDIS KEYS
  * ──────────
@@ -33,22 +34,12 @@
  */
 
 import { withRedisCritical, withRedis } from "./redis";
-import { pool } from "@workspace/db";
+import { pool, type AITask } from "@workspace/db";
 import type { AIFeature } from "./ai";
+import { getDailyLimit } from "./ai-config";
 import { logger } from "../lib/logger";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-
-const DAILY_LIMITS: Record<string, number> = {
-  free:                  0,
-  general_english:       parseInt(process.env.AI_DAILY_LIMIT_GENERAL ?? "5", 10),
-  professional_english:  parseInt(process.env.AI_DAILY_LIMIT_PRO ?? "20", 10),
-  admin:                 Infinity,
-};
-
-function getDailyLimit(plan: string | null): number {
-  return DAILY_LIMITS[plan ?? "free"] ?? 0;
-}
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -59,16 +50,24 @@ function todayKey(): string {
 export interface QuotaContext {
   userId: number;
   subscriptionPlan: string | null;
-  feature: AIFeature;
+  /** Which configured task this call belongs to — the unit limits are set on. */
+  task: AITask;
+  /** Legacy label kept on the usage log for continuity with older rows. */
+  feature?: AIFeature;
 }
 
 export interface UsageRecord extends QuotaContext {
   provider: string;
   modelId: string;
   tokensUsed: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  /** Omitted when the provider's token prices have not been entered. */
   costUsd?: number;
   succeeded: boolean;
   requestId?: string;
+  /** Logged, not stored — there is no column for it, and it is a debugging aid. */
+  latencyMs?: number;
 }
 
 // ─── Quota check ──────────────────────────────────────────────────────────────
@@ -82,20 +81,21 @@ export interface UsageRecord extends QuotaContext {
  *   - Error if Redis is unavailable (fail closed)
  */
 export async function checkAndIncrement(ctx: QuotaContext): Promise<void> {
-  const limit = getDailyLimit(ctx.subscriptionPlan);
+  const limit = await getDailyLimit(ctx.subscriptionPlan, ctx.task);
 
-  // Admin bypass
-  if (!isFinite(limit)) return;
+  // -1 means unlimited — used for admin and for tasks deliberately uncapped.
+  if (limit < 0) return;
 
-  // Free plan — no AI access at all
   if (limit === 0) {
     throw Object.assign(
-      new Error("AI features are not available on the free plan. Please upgrade to access this feature."),
+      new Error("This AI feature is not included in your plan."),
       { status: 403, code: "AI_QUOTA_PLAN_INELIGIBLE" },
     );
   }
 
-  const redisKey = `v1:ai:daily:${ctx.userId}:${todayKey()}`;
+  // Counted per task, so a student spending their conversation allowance does
+  // not also lose the ability to have a written answer graded.
+  const redisKey = `v1:ai:daily:${ctx.userId}:${ctx.task}:${todayKey()}`;
 
   // Fails closed if Redis unavailable (withRedisCritical throws)
   await withRedisCritical(async (r) => {
@@ -110,8 +110,7 @@ export async function checkAndIncrement(ctx: QuotaContext): Promise<void> {
       await r.decr(redisKey);
       throw Object.assign(
         new Error(
-          `Daily AI request limit reached (${limit} requests/day for your plan). ` +
-          `Your limit resets at midnight UTC.`,
+          `Daily limit reached for this feature (${limit} per day on your plan).`,
         ),
         { status: 429, code: "AI_QUOTA_EXCEEDED" },
       );
@@ -123,9 +122,12 @@ export async function checkAndIncrement(ctx: QuotaContext): Promise<void> {
  * Get current daily usage for a user. Returns null if Redis is unavailable.
  * Used for displaying quota info in the API without enforcing limits.
  */
-export async function getDailyUsage(userId: number): Promise<{ used: number; limit: number } | null> {
+export async function getDailyUsage(
+  userId: number,
+  task: AITask,
+): Promise<{ used: number; limit: number } | null> {
   return withRedis(async (r) => {
-    const key = `v1:ai:daily:${userId}:${todayKey()}`;
+    const key = `v1:ai:daily:${userId}:${task}:${todayKey()}`;
     const raw = await r.get(key);
     return { used: parseInt(raw ?? "0", 10), limit: 0 }; // limit filled by caller
   }, null);
@@ -142,14 +144,19 @@ export async function recordUsage(record: UsageRecord): Promise<void> {
   try {
     await pool.query(
       `INSERT INTO ai_usage_logs
-         (user_id, feature, provider, model_id, tokens_used, cost_usd, succeeded, request_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         (user_id, feature, task, provider, model_id,
+          tokens_used, prompt_tokens, completion_tokens,
+          cost_usd, succeeded, request_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         record.userId,
-        record.feature,
+        record.feature ?? record.task,
+        record.task,
         record.provider,
         record.modelId,
         record.tokensUsed,
+        record.promptTokens ?? null,
+        record.completionTokens ?? null,
         record.costUsd ?? null,
         record.succeeded,
         record.requestId ?? null,
@@ -157,7 +164,7 @@ export async function recordUsage(record: UsageRecord): Promise<void> {
     );
   } catch (err) {
     // Log but never let a logging failure affect the user experience
-    logger.error({ err, userId: record.userId, feature: record.feature }, "Failed to persist AI usage record");
+    logger.error({ err, userId: record.userId, task: record.task }, "Failed to persist AI usage record");
   }
 }
 

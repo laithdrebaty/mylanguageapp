@@ -3,6 +3,7 @@ import { useGetMe } from "@workspace/api-client-react";
 import {
   LayoutDashboard, BookOpen, Globe, BookMarked, GraduationCap,
   BookText, Image, Star, ClipboardList, Users, LogOut, ChevronRight, FileEdit,
+  ListChecks, PenLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -21,8 +22,10 @@ const navItems: NavItem[] = [
   { href: "/cms/languages", label: "Languages", icon: <Globe className="h-4 w-4" />, adminOnly: true },
   { href: "/cms/curricula", label: "Curricula", icon: <BookMarked className="h-4 w-4" />, adminOnly: true },
   { href: "/cms/levels", label: "Levels", icon: <GraduationCap className="h-4 w-4" />, adminOnly: true },
+  { href: "/cms/quizzes", label: "Quizzes", icon: <ListChecks className="h-4 w-4" /> },
   { href: "/cms/vocabulary", label: "Vocabulary", icon: <BookText className="h-4 w-4" /> },
   { href: "/cms/media", label: "Media", icon: <Image className="h-4 w-4" /> },
+  { href: "/cms/grading", label: "Marking", icon: <PenLine className="h-4 w-4" /> },
   { href: "/cms/reviews", label: "Reviews", icon: <Star className="h-4 w-4" /> },
   { href: "/cms/audit", label: "Audit Log", icon: <ClipboardList className="h-4 w-4" /> },
 ];

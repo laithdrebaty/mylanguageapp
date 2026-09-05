@@ -1,7 +1,14 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, inArray } from "drizzle-orm";
-import { db, lessonProgressTable, lessonsTable, levelsTable } from "@workspace/db";
+import {
+  db,
+  lessonProgressTable,
+  lessonsTable,
+  levelsTable,
+  studentSubscriptionsTable,
+} from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { getWeaknessReport } from "../services/weakness";
 
 const router: IRouter = Router();
 
@@ -95,6 +102,38 @@ router.get("/review/weak-areas", requireAuth, async (req, res): Promise<void> =>
     .filter(Boolean);
 
   res.json(result);
+});
+
+/**
+ * The student's skill profile: what they are good at, what needs work, and
+ * which existing lessons to go back to.
+ *
+ * The profile and the recommendations are computed from marks already recorded
+ * and cost nothing, so this is safe to call on every dashboard load. The Arabic
+ * advice sentence costs a model call and is only written when `advice=true` is
+ * asked for — and even then, failing to get it does not fail the request.
+ */
+router.get("/review/skills", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.session.userId!;
+  const withAdvice = req.query.advice === "true";
+
+  const [sub] = await db
+    .select({ planCode: studentSubscriptionsTable.planCode })
+    .from(studentSubscriptionsTable)
+    .where(
+      and(
+        eq(studentSubscriptionsTable.userId, userId),
+        eq(studentSubscriptionsTable.status, "active"),
+      ),
+    )
+    .limit(1);
+
+  res.json(
+    await getWeaknessReport(userId, {
+      subscriptionPlan: sub?.planCode ?? "free",
+      withAdvice,
+    }),
+  );
 });
 
 export default router;

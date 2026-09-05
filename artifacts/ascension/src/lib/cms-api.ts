@@ -32,6 +32,98 @@ const del = <T>(path: string) => request<T>("DELETE", path);
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
+export type QuizKind = "practice" | "level_evaluation";
+
+export interface CMSQuiz {
+  id: number;
+  title: string;
+  titleAr: string;
+  description?: string | null;
+  descriptionAr?: string | null;
+  instructions?: string | null;
+  instructionsAr?: string | null;
+  /** practice has no effect on a student's level; level_evaluation gates it. */
+  kind: QuizKind;
+  levelId?: number | null;
+  timeLimitSec?: number | null;
+  maxAttempts?: number | null;
+  passingScore: number;
+  xpReward: number;
+  shuffleBlocks: boolean;
+  revealAnswers: string;
+  /** Hours a student waits after failing before retrying an evaluation. */
+  cooldownHours?: number | null;
+  status: LessonStatus;
+  contentVersion?: number;
+  blockCount?: number;
+  updatedAt?: string;
+}
+
+export interface CMSQuizBlock {
+  id: number;
+  quizId: number;
+  type: string;
+  order: number;
+  title?: string | null;
+  titleAr?: string | null;
+  instructions?: string | null;
+  instructionsAr?: string | null;
+  content?: string | null;
+  contentAr?: string | null;
+  prompt?: string | null;
+  promptAr?: string | null;
+  isRequired: boolean;
+  isActive: boolean;
+  /** Read-aloud: pronunciation can only be scored when there is a set passage. */
+  expectsReferenceReading?: boolean;
+  referenceMediaId?: number | null;
+  config?: QuizBlockConfig | null;
+}
+
+/** One piece of work waiting on a human. */
+export interface GradingQueueItem {
+  id: number;
+  kind: "quiz_response" | "lesson_activity";
+  attemptId: number;
+  blockType: string;
+  prompt: string | null;
+  /** True when the student was reading a set passage. */
+  expectsReferenceReading: boolean | null;
+  /** The passage, when there is one — what the recording should match. */
+  referenceText: string | null;
+  response: unknown;
+  transcript: string | null;
+  mediaAssetId: number | null;
+  gradingAttempts: number;
+  lastGradingError: string | null;
+  submittedAt: string | null;
+  studentName: string;
+  studentId: number;
+  /** The quiz or lesson it belongs to. */
+  context: string;
+}
+
+export interface GradedAttempt {
+  id: number;
+  status: string;
+  score: number | null;
+  passed: boolean | null;
+  pendingReviewCount: number;
+}
+
+/** The answer key and options, as authored. Never sent to a student verbatim. */
+export interface QuizBlockConfig {
+  options?: Array<{ id: string; text: string; textAr?: string | null }>;
+  correctOptionIds?: string[];
+  explanation?: string | null;
+  explanationAr?: string | null;
+  /** What a good written answer must mention — the AI grader's rubric. */
+  keyPoints?: string[];
+  minWords?: number;
+  mediaKey?: string | null;
+  points?: number;
+}
+
 export type LessonStatus = "draft" | "in_review" | "approved" | "published" | "archived";
 
 export interface CMSLesson {
@@ -155,11 +247,106 @@ export const cmsApi = {
     delete: (id: number) => del<{ deleted: boolean }>(`/cms/vocabulary/${id}`),
   },
 
+  // Quizzes and level evaluations
+  quizzes: {
+    list: (status?: string) =>
+      get<{ quizzes: CMSQuiz[]; total: number }>(
+        `/cms/quizzes${status ? `?status=${status}` : ""}`,
+      ),
+    get: (id: number) => get<CMSQuiz & { blocks: CMSQuizBlock[] }>(`/cms/quizzes/${id}`),
+    create: (body: Partial<CMSQuiz>) => post<CMSQuiz>("/cms/quizzes", body),
+    update: (id: number, body: Partial<CMSQuiz>) => patch<CMSQuiz>(`/cms/quizzes/${id}`, body),
+    delete: (id: number) => del<{ deleted: boolean }>(`/cms/quizzes/${id}`),
+    blockTypes: () => get<{ types: string[] }>("/cms/quiz-block-types"),
+    addBlock: (quizId: number, body: Partial<CMSQuizBlock>) =>
+      post<CMSQuizBlock>(`/cms/quizzes/${quizId}/blocks`, body),
+    updateBlock: (quizId: number, blockId: number, body: Partial<CMSQuizBlock>) =>
+      patch<CMSQuizBlock>(`/cms/quizzes/${quizId}/blocks/${blockId}`, body),
+    deleteBlock: (quizId: number, blockId: number) =>
+      del<{ deleted: boolean }>(`/cms/quizzes/${quizId}/blocks/${blockId}`),
+    reorderBlocks: (quizId: number, blockIds: number[]) =>
+      post<{ reordered: boolean }>(`/cms/quizzes/${quizId}/blocks/reorder`, { blockIds }),
+    /** submit | approve | reject | publish | unpublish | archive | restore */
+    transition: (quizId: number, action: string) =>
+      post<{ id: number; status: string }>(`/cms/quizzes/${quizId}/${action}`, {}),
+  },
+
   // Media
   media: {
     list: (page = 1) => get<{ items: any[]; total: number }>(`/cms/media?page=${page}`),
     create: (body: any) => post<any>("/cms/media", body),
     delete: (id: number) => del<any>(`/cms/media/${id}`),
+
+    /**
+     * Upload a file, rather than registering a key someone put in the bucket by
+     * hand. Same three-step handshake the student recorder uses: the server
+     * picks the key and signs a PUT, the browser uploads straight to storage,
+     * and the server confirms the bytes landed before the asset is usable.
+     */
+    upload: async (
+      file: File,
+      onProgress?: (stage: "signing" | "uploading" | "confirming") => void,
+    ) => {
+      onProgress?.("signing");
+      const begun = await post<{
+        mediaId: number;
+        key: string;
+        upload: { url: string; headers: Record<string, string> };
+      }>("/cms/media/uploads", {
+        contentType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        originalName: file.name,
+      });
+
+      onProgress?.("uploading");
+      const put = await fetch(begun.upload.url, {
+        method: "PUT",
+        body: file,
+        headers: begun.upload.headers,
+        // The bucket is a different origin and needs no session cookie;
+        // sending one only breaks the CORS preflight.
+        credentials: "omit",
+      });
+      if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+
+      onProgress?.("confirming");
+      // Confirmation goes to the student endpoint: it checks the uploader owns
+      // the pending row, which is true for staff uploads too.
+      return post<{ mediaId: number; status: string; sizeBytes: number | null }>(
+        `/media/uploads/${begun.mediaId}/complete`,
+        {},
+      );
+    },
+
+    /** A short-lived playback URL, for previewing an asset in the CMS. */
+    playbackUrl: (mediaId: number) => get<{ url: string }>(`/media/${mediaId}/url`),
+  },
+
+  // The marking queue — work AI could not finish
+  grading: {
+    queue: (all = false) =>
+      get<{
+        items: GradingQueueItem[];
+        counts: { quizResponses: number; activities: number; exhausted: number };
+        maxAttempts: number;
+        showingOnlyExhausted: boolean;
+      }>(`/cms/grading/queue${all ? "?all=true" : ""}`),
+    mediaUrl: (mediaId: number) => get<{ url: string }>(`/cms/grading/media/${mediaId}`),
+    markQuizResponse: (id: number, body: { score: number; feedbackAr?: string }) =>
+      post<{ marked: boolean; attempt: GradedAttempt | null }>(
+        `/cms/grading/quiz-responses/${id}`,
+        body,
+      ),
+    markActivity: (id: number, body: { score: number; feedbackAr?: string }) =>
+      post<{ marked: boolean }>(`/cms/grading/activities/${id}`, body),
+    sweep: () =>
+      post<{
+        quizAttemptsRetried: number;
+        activitiesRetried: number;
+        counts: { quizResponses: number; activities: number; exhausted: number };
+      }>("/cms/grading/sweep", {}),
+    retry: (kind: string, id: number) =>
+      post<{ reset: boolean }>(`/cms/grading/retry/${kind}/${id}`, {}),
   },
 
   // Reviews + audit

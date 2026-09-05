@@ -29,6 +29,9 @@ import {
   findNextLesson,
   publishedLessonFilter,
 } from "../services/learning";
+import { assertUsableRecording, MediaValidationError } from "../services/media";
+import { gradeLessonActivity } from "../services/grading-runner";
+import { jobs } from "../services/jobs";
 
 const router: IRouter = Router();
 
@@ -192,6 +195,7 @@ interface LessonContentBundle {
     promptAr: string | null;
     exampleAudio: string | null;
     audioUrl: string | null;
+    referenceMediaId: number | null;
   }>;
 }
 
@@ -274,6 +278,10 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
       promptAr: block.promptAr ?? null,
       exampleAudio: block.exampleAudio ?? null,
       audioUrl: resolveAudioUrl(block, exercise),
+      // Resolved to a playable URL by the client through /media/:id/url rather
+      // than presigned here — a lesson can hold many blocks, and signing every
+      // one on every load would be wasted work for the ones never played.
+      referenceMediaId: block.referenceMediaId ?? null,
     };
   });
 
@@ -555,6 +563,8 @@ const submitBlockSchema = z.object({
   selectedOptionId: z.string().optional(),
   responseText: z.string().optional(),
   mediaReference: z.string().optional(),
+  /** A media_assets id from the upload handshake. Verified before it is stored. */
+  mediaId: z.number().int().positive().optional(),
   recordingDurationSeconds: z.number().int().min(0).optional(),
   timeSpentSeconds: z.number().int().min(0).optional(),
 });
@@ -592,6 +602,7 @@ router.post(
       selectedOptionId,
       responseText,
       mediaReference,
+      mediaId,
       recordingDurationSeconds,
     } = parsed.data;
 
@@ -665,6 +676,24 @@ router.post(
     if (!level || level.curriculumId !== ctx.curriculumId) {
       res.status(403).json({ error: "This lesson does not belong to your curriculum" });
       return;
+    }
+
+    // A recording is only accepted once the server has confirmed it exists in
+    // the bucket and belongs to this student — see services/media.ts. Without
+    // this check a student could attach anybody's audio to their own attempt.
+    if (mediaId !== undefined) {
+      try {
+        await assertUsableRecording(mediaId, userId, "lesson_activity");
+      } catch (err) {
+        if (err instanceof MediaValidationError) {
+          res.status(err.code === "NOT_FOUND" ? 404 : 400).json({
+            error: err.message,
+            code: err.code,
+          });
+          return;
+        }
+        throw err;
+      }
     }
 
     // Find exercise for this block (if any)
@@ -748,6 +777,7 @@ router.post(
         selectedOptionId: selectedOptionId ?? null,
         responseText: responseText ?? null,
         mediaReference: mediaReference ?? null,
+        mediaAssetId: mediaId ?? null,
         recordingDurationSeconds: recordingDurationSeconds ?? null,
         isCorrect,
         score,
@@ -768,14 +798,30 @@ router.post(
       })
       .onConflictDoNothing();
 
+    // An open-ended answer is graded here and now rather than in the background:
+    // feedback is the entire point of the activity (spec section 4C), and a
+    // student who has moved on will not come back for it. Failure is safe —
+    // gradeLessonActivity returns null and the attempt stays pending, so the
+    // lesson never stalls on the model being slow or absent.
+    let verdict = null;
+    if (evaluationStatus === "pending" && activityType === "open_ended" && responseText) {
+      verdict = await gradeLessonActivity(attempt.id);
+    }
+
     const responsePayload: Record<string, unknown> = {
       attemptId: attempt.id,
       blockId,
       completed: true,
-      correct: isCorrect,
-      score,
-      evaluationStatus,
+      correct: verdict ? verdict.correct : isCorrect,
+      score: verdict ? verdict.score : score,
+      evaluationStatus: verdict ? "graded" : evaluationStatus,
     };
+
+    if (verdict) {
+      responsePayload.feedbackAr = verdict.feedback;
+      responsePayload.feedback = verdict.feedbackEn;
+      responsePayload.dimensions = verdict.dimensions;
+    }
 
     // Only expose explanation after MCQ submission
     if (exercise?.exerciseType === "mcq") {
@@ -784,6 +830,80 @@ router.post(
     }
 
     res.json(responsePayload);
+
+    // A recording is assessed after the response is sent: it downloads audio
+    // and waits on a speech recogniser, which is seconds of work. The student
+    // moves on and the verdict appears in their progress when it lands.
+    if (evaluationStatus === "pending" && mediaId !== undefined) {
+      jobs.enqueue("assess_speaking_activity", { activityAttemptId: attempt.id });
+    }
+  },
+);
+
+/**
+ * The current verdict on one activity attempt.
+ *
+ * A spoken answer is assessed in the background, so the submit response can only
+ * say "pending". This is how the student finds out what it came to without
+ * reloading the lesson — the block polls it a few times after recording.
+ */
+router.get(
+  "/lessons/:lessonId/attempts/:attemptId",
+  requireStudent,
+  async (req, res): Promise<void> => {
+    const attemptId = parseInt(
+      Array.isArray(req.params.attemptId) ? req.params.attemptId[0] : req.params.attemptId,
+      10,
+    );
+    if (isNaN(attemptId)) {
+      res.status(400).json({ error: "Invalid attempt ID" });
+      return;
+    }
+
+    const [attempt] = await db
+      .select()
+      .from(learningActivityAttemptsTable)
+      .where(
+        and(
+          eq(learningActivityAttemptsTable.id, attemptId),
+          // Scoped to the caller: an attempt id must not be a way to read
+          // another student's marks.
+          eq(learningActivityAttemptsTable.userId, req.session.userId!),
+        ),
+      )
+      .limit(1);
+
+    if (!attempt) {
+      res.status(404).json({ error: "Attempt not found" });
+      return;
+    }
+
+    const metrics = (attempt.speechMetrics ?? null) as Record<string, unknown> | null;
+
+    res.json({
+      attemptId: attempt.id,
+      blockId: attempt.blockId,
+      evaluationStatus: attempt.evaluationStatus,
+      correct: attempt.isCorrect,
+      score: attempt.score,
+      feedback: attempt.feedback,
+      feedbackAr: attempt.feedbackAr,
+      transcript: attempt.transcript,
+      pronunciationScore: attempt.pronunciationScore,
+      fluencyScore: attempt.fluencyScore,
+      // The full word-by-word alignment is large and only useful to a teacher;
+      // the student needs the headline numbers and what to practise.
+      speechMetrics: metrics
+        ? {
+            speechRate: metrics.speechRate,
+            pauseCount: metrics.pauseCount,
+            meanLengthOfRun: metrics.meanLengthOfRun,
+            fillersPer100Words: metrics.fillersPer100Words,
+            problemWords: metrics.problemWords,
+            fluencyUnavailable: metrics.fluencyUnavailable,
+          }
+        : null,
+    });
   },
 );
 

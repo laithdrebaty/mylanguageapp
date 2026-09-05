@@ -10,7 +10,8 @@
  *   - 3 subscription plans
  *   - 2 languages + 1 CEFR curriculum
  *   - 12 CEFR levels (A1.1 → C2.2)
- *   - 10 placement questions with 4 options each
+ *   - 15 placement questions across grammar, vocabulary, reading,
+ *     comprehension and writing, tagged by skill and difficulty
  *
  * Usage: DATABASE_URL=postgresql://... node scripts/seed.mjs
  */
@@ -59,55 +60,47 @@ const LEVELS = [
 ];
 
 /** 10 questions, ascending difficulty. `c` marks the correct option. */
+/**
+ * The placement test.
+ *
+ * Each question is tagged with the skill it tests and roughly the level it sits
+ * at. Both matter: the skill tag is what makes a per-skill breakdown possible
+ * at all, and the difficulty is what separates a strong beginner from a weak
+ * intermediate — both score about half on an untagged test.
+ *
+ * Ordered easiest to hardest so a student meets something they can answer
+ * first, which matters more for a beginner's nerve than for the scoring.
+ */
 const QUESTIONS = [
+  // Grammar
   {
-    q: 'Choose the correct greeting: "____ morning!"',
-    ar: 'اختر التحية الصحيحة: "____ morning!"',
-    opts: [['a', 'Good', true], ['b', 'Well', false], ['c', 'Nice', false], ['d', 'Fine', false]],
-  },
-  {
-    q: '"My name ____ Sara."',
-    ar: '"My name ____ Sara."',
-    opts: [['a', 'am', false], ['b', 'is', true], ['c', 'are', false], ['d', 'be', false]],
-  },
-  {
-    q: 'Which is a number? ',
-    ar: 'أي مما يلي رقم؟',
-    opts: [['a', 'Blue', false], ['b', 'Seven', true], ['c', 'Table', false], ['d', 'Run', false]],
-  },
-  {
-    q: '"She ____ to school every day."',
-    ar: '"She ____ to school every day."',
+    skill: 'grammar', difficulty: 'A1',
+    q: 'She ____ to school every day.',
+    ar: 'She ____ to school every day.',
     opts: [['a', 'go', false], ['b', 'goes', true], ['c', 'going', false], ['d', 'gone', false]],
   },
   {
-    q: 'Choose the past tense of "eat".',
-    ar: 'اختر صيغة الماضي من الفعل "eat".',
-    opts: [['a', 'eated', false], ['b', 'eaten', false], ['c', 'ate', true], ['d', 'eating', false]],
+    skill: 'grammar', difficulty: 'A2',
+    q: 'I ____ my homework before dinner yesterday.',
+    ar: 'I ____ my homework before dinner yesterday.',
+    opts: [['a', 'finish', false], ['b', 'finishes', false], ['c', 'finished', true], ['d', 'finishing', false]],
   },
   {
-    q: '"I have lived here ____ 2019."',
-    ar: '"I have lived here ____ 2019."',
-    opts: [['a', 'since', true], ['b', 'for', false], ['c', 'from', false], ['d', 'during', false]],
+    skill: 'grammar', difficulty: 'B1',
+    q: 'If it ____ tomorrow, we will stay at home.',
+    ar: 'If it ____ tomorrow, we will stay at home.',
+    opts: [['a', 'rains', true], ['b', 'will rain', false], ['c', 'rained', false], ['d', 'raining', false]],
   },
   {
-    q: '"If I ____ more time, I would travel."',
-    ar: '"If I ____ more time, I would travel."',
-    opts: [['a', 'have', false], ['b', 'had', true], ['c', 'has', false], ['d', 'having', false]],
+    skill: 'grammar', difficulty: 'B2',
+    q: 'She insisted on ____ the bill herself.',
+    ar: 'She insisted on ____ the bill herself.',
+    opts: [['a', 'pay', false], ['b', 'to pay', false], ['c', 'paying', true], ['d', 'paid', false]],
   },
   {
-    q: 'Which word means "extremely tired"?',
-    ar: 'أي كلمة تعني "متعب جداً"؟',
-    opts: [['a', 'Exhausted', true], ['b', 'Excited', false], ['c', 'Enormous', false], ['d', 'Efficient', false]],
-  },
-  {
-    q: 'Choose the best formal alternative to "get in touch with".',
-    ar: 'اختر البديل الرسمي الأنسب لعبارة "get in touch with".',
-    opts: [['a', 'Reach out', false], ['b', 'Contact', true], ['c', 'Ring up', false], ['d', 'Catch', false]],
-  },
-  {
-    q: '"Had she known, she ____ differently."',
-    ar: '"Had she known, she ____ differently."',
+    skill: 'grammar', difficulty: 'C1',
+    q: 'Had she known, she ____ differently.',
+    ar: 'Had she known, she ____ differently.',
     opts: [
       ['a', 'would act', false],
       ['b', 'would have acted', true],
@@ -115,7 +108,95 @@ const QUESTIONS = [
       ['d', 'acted', false],
     ],
   },
+
+  // Vocabulary
+  {
+    skill: 'vocabulary', difficulty: 'A1',
+    q: 'What do you use to write?',
+    ar: 'ما الذي تستخدمه للكتابة؟',
+    opts: [['a', 'A pen', true], ['b', 'A plate', false], ['c', 'A chair', false], ['d', 'A door', false]],
+  },
+  {
+    skill: 'vocabulary', difficulty: 'A2',
+    q: 'The opposite of "expensive" is ____.',
+    ar: 'عكس كلمة "expensive" هو ____.',
+    opts: [['a', 'cheap', true], ['b', 'heavy', false], ['c', 'quiet', false], ['d', 'early', false]],
+  },
+  {
+    skill: 'vocabulary', difficulty: 'B1',
+    q: 'Which word means "very tired"?',
+    ar: 'أي كلمة تعني "متعب جداً"؟',
+    opts: [['a', 'Exhausted', true], ['b', 'Excited', false], ['c', 'Enormous', false], ['d', 'Efficient', false]],
+  },
+  {
+    skill: 'vocabulary', difficulty: 'B2',
+    q: 'Choose the best formal alternative to "get in touch with".',
+    ar: 'اختر البديل الرسمي الأنسب لعبارة "get in touch with".',
+    opts: [['a', 'Reach out', false], ['b', 'Contact', true], ['c', 'Ring up', false], ['d', 'Catch', false]],
+  },
+
+  // Reading — two questions on one passage, so this tests comprehension of a
+  // text rather than recognition of a single sentence.
+  {
+    skill: 'reading', difficulty: 'A2',
+    passage: 'Omar works at a bakery in Damascus. He starts at five in the morning and finishes at one. On Fridays the bakery is closed, so he visits his grandmother.',
+    q: 'What time does Omar finish work?',
+    ar: 'متى ينتهي عمر من عمله؟',
+    opts: [['a', 'At five', false], ['b', 'At one', true], ['c', 'On Friday', false], ['d', 'In the evening', false]],
+  },
+  {
+    skill: 'reading', difficulty: 'B1',
+    passage: 'Omar works at a bakery in Damascus. He starts at five in the morning and finishes at one. On Fridays the bakery is closed, so he visits his grandmother.',
+    q: 'Why does Omar visit his grandmother on Fridays?',
+    ar: 'لماذا يزور عمر جدته يوم الجمعة؟',
+    opts: [
+      ['a', 'Because she is ill', false],
+      ['b', 'Because the bakery is closed', true],
+      ['c', 'Because he works nearby', false],
+      ['d', 'Because she bakes bread', false],
+    ],
+  },
+
+  // Comprehension
+  {
+    skill: 'comprehension', difficulty: 'A1',
+    q: 'Which is a polite way to greet someone in the morning?',
+    ar: 'ما هي الطريقة المهذبة لتحية شخص في الصباح؟',
+    opts: [['a', 'Good morning', true], ['b', 'Good night', false], ['c', 'Goodbye', false], ['d', 'See you', false]],
+  },
+  {
+    skill: 'comprehension', difficulty: 'B1',
+    q: 'Your friend says "I could not agree more." What do they mean?',
+    ar: 'قال صديقك "I could not agree more." ماذا يقصد؟',
+    opts: [
+      ['a', 'They completely agree', true],
+      ['b', 'They disagree', false],
+      ['c', 'They are unsure', false],
+      ['d', 'They want to change the subject', false],
+    ],
+  },
+  {
+    skill: 'comprehension', difficulty: 'B2',
+    q: 'A colleague writes "Let us circle back on this next week." What are they suggesting?',
+    ar: 'كتب زميل "Let us circle back on this next week." بماذا يقترح؟',
+    opts: [
+      ['a', 'Discussing it again later', true],
+      ['b', 'Cancelling the project', false],
+      ['c', 'Meeting in a circle', false],
+      ['d', 'Finishing it today', false],
+    ],
+  },
+
+  // Writing — graded by the same AI grader lessons and quizzes use. If AI is
+  // unavailable this goes unscored and the rest of the test still stands.
+  {
+    skill: 'writing', difficulty: 'A2', type: 'written',
+    q: 'Write three or four sentences about your daily routine. What time do you wake up, and what do you do first?',
+    ar: 'اكتب ثلاث أو أربع جمل عن روتينك اليومي. متى تستيقظ؟ وماذا تفعل أولاً؟',
+    opts: [],
+  },
 ];
+
 
 const client = new pg.Client({ connectionString: databaseUrl });
 await client.connect();
@@ -184,9 +265,10 @@ try {
     if (existing.length > 0) continue;
 
     const { rows: [q] } = await client.query(
-      `INSERT INTO placement_questions (question_text, question_text_ar, type, "order")
-       VALUES ($1,$2,'mcq',$3) RETURNING id`,
-      [item.q, item.ar, order],
+      `INSERT INTO placement_questions
+         (question_text, question_text_ar, type, skill, difficulty, passage, "order")
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [item.q, item.ar, item.type ?? 'mcq', item.skill, item.difficulty, item.passage ?? null, order],
     );
     for (const [optionId, text, isCorrect] of item.opts) {
       await client.query(

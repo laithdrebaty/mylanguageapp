@@ -16,6 +16,16 @@ This folder has one file per feature: what it does, how it works, and a plain-En
 | Quizzes | [quizzes.md](quizzes.md) | Very good | Quiz time limits are shown to students but not actually enforced by the server |
 | Progress tracking / dashboard | [progress-tracking.md](progress-tracking.md) | Good, one broken feature | The "streak" counter is never updated — it will always show 0 |
 | AI chat ("talk to AI") | [ai-chat.md](ai-chat.md) | Not built yet | Only the plumbing (quotas, provider interface) exists; no actual conversation feature or endpoint |
+| Level evaluation & promotion | [level-evaluation.md](level-evaluation.md) | New | Evaluations containing speaking or writing blocks stay ungraded — nothing grades them yet |
+| Media storage & recordings | [media-uploads.md](media-uploads.md) | New | Recordings are stored but nothing transcribes or scores them yet |
+| AI configuration panel | [ai-configuration.md](ai-configuration.md) | New | No audit trail of who changed a limit |
+| Open-answer grading | [open-answer-grading.md](open-answer-grading.md) | New | Background jobs are in-process: a restart loses one, and nothing retries pending work |
+| Pronunciation & fluency | [pronunciation.md](pronunciation.md) | New | Not phoneme-level: catches words the recogniser hears wrong, not subtle vowel errors |
+| CMS authoring | [cms-authoring.md](cms-authoring.md) | New | No quiz preview, and reference audio still cannot be attached to a block from the UI |
+| Grading recovery & marking | [grading-recovery.md](grading-recovery.md) | New | Nothing alerts when the human queue grows — the signal that AI is misconfigured |
+| Skill profile & weaknesses | [weakness-engine.md](weakness-engine.md) | New | No history: computed fresh each time, so there is no progress-over-time view |
+| AI conversation tutor | [conversation-tutor.md](conversation-tutor.md) | New | The per-plan daily limit counts model calls, so it can silently truncate a long block |
+| Multi-skill placement | [placement.md](placement.md) | New | Listening, speaking and pronunciation are still not assessed; no CMS screen for questions |
 
 ## What this tells you overall
 

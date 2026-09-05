@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,6 +25,10 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { uploadRecording, MediaUploadError } from "@/lib/media-api";
+import { pollAttemptVerdict, type AttemptVerdict } from "@/lib/speech-api";
+import { ConversationBlock } from "@/components/conversation-block";
+import { useMicRecorder } from "@/hooks/use-mic-recorder";
 import {
   ArrowRight,
   Volume2,
@@ -69,69 +73,13 @@ interface BlockState {
   // Speaking / pronunciation
   recordingDurationSeconds?: number;
   hasRecording?: boolean;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Microphone recorder hook
-// ──────────────────────────────────────────────────────────────────────
-type RecorderStatus = "idle" | "recording" | "done" | "unsupported" | "denied";
-
-function useMicRecorder() {
-  const [status, setStatus] = useState<RecorderStatus>("idle");
-  const [durationSec, setDurationSec] = useState(0);
-  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
-  const mediaRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startTimeRef = useRef<number>(0);
-
-  const start = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setStatus("unsupported");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
-      chunksRef.current = [];
-      mr.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        setPlaybackUrl(url);
-        const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
-        setDurationSec(elapsed);
-        setStatus("done");
-        stream.getTracks().forEach(t => t.stop());
-      };
-      mr.start();
-      mediaRef.current = mr;
-      startTimeRef.current = Date.now();
-      setStatus("recording");
-    } catch (err: unknown) {
-      const name = err instanceof Error ? err.name : "";
-      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-        setStatus("denied");
-      } else {
-        setStatus("unsupported");
-      }
-    }
-  }, []);
-
-  const stop = useCallback(() => {
-    mediaRef.current?.stop();
-  }, []);
-
-  const reset = useCallback(() => {
-    if (playbackUrl) URL.revokeObjectURL(playbackUrl);
-    setPlaybackUrl(null);
-    setDurationSec(0);
-    setStatus("idle");
-    chunksRef.current = [];
-  }, [playbackUrl]);
-
-  return { status, durationSec, playbackUrl, start, stop, reset };
+  /** Set once the recording has been uploaded and confirmed by the server. */
+  mediaId?: number;
+  uploading?: boolean;
+  uploadError?: string;
+  /** Filled in once the background speech assessment reports back. */
+  speechVerdict?: AttemptVerdict;
+  awaitingVerdict?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -296,12 +244,83 @@ function OpenEndedBlock({
         dir="ltr"
       />
 
-      {state.result && (state.result.explanationAr || state.result.explanation) && (
-        <div className="p-4 rounded-xl border bg-secondary/50">
-          <p className="text-sm text-muted-foreground">
-            {state.result.explanationAr || state.result.explanation}
-          </p>
+      {state.result && <OpenEndedVerdict result={state.result} />}
+    </div>
+  );
+}
+
+/**
+ * What came back for a written answer.
+ *
+ * Three outcomes, and the difference matters to the student: graded with
+ * feedback, awaiting a mark (AI unavailable — their answer is safe and a
+ * teacher will look at it), or just the teacher's prepared explanation.
+ */
+function OpenEndedVerdict({ result }: { result: LessonActivityResult }) {
+  const feedback = result.feedbackAr || result.feedback;
+  const explanation = result.explanationAr || result.explanation;
+  const dims = result.dimensions;
+
+  if (result.evaluationStatus === "pending") {
+    return (
+      <div className="p-4 rounded-xl border bg-blue-50 border-blue-200">
+        <p className="text-sm text-blue-900">
+          تم استلام إجابتك وسيتم تقييمها لاحقاً.
+        </p>
+      </div>
+    );
+  }
+
+  if (!feedback && !explanation) return null;
+
+  const passed = result.correct === true;
+
+  return (
+    <div
+      className={`p-4 rounded-xl border space-y-3 ${
+        feedback
+          ? passed
+            ? "bg-emerald-50 border-emerald-200"
+            : "bg-amber-50 border-amber-200"
+          : "bg-secondary/50"
+      }`}
+    >
+      {feedback && (
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm font-medium flex-1">{feedback}</p>
+          {result.score !== null && result.score !== undefined && (
+            <span className="text-lg font-bold tabular-nums shrink-0">
+              {Math.round(result.score)}%
+            </span>
+          )}
         </div>
+      )}
+
+      {dims && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-black/5">
+          {(
+            [
+              ["الصلة", dims.relevance],
+              ["القواعد", dims.grammar],
+              ["المفردات", dims.vocabulary],
+              ["الوضوح", dims.clarity],
+              ["المستوى", dims.levelAppropriate],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label} className="text-center">
+              <div className="text-sm font-bold tabular-nums">
+                {value === undefined ? "—" : Math.round(value)}
+              </div>
+              <div className="text-[10px] text-muted-foreground">{label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {explanation && (
+        <p className="text-sm text-muted-foreground border-t border-black/5 pt-2">
+          {explanation}
+        </p>
       )}
     </div>
   );
@@ -314,20 +333,51 @@ function SpeakingBlock({
   block,
   state,
   onRecordingDone,
+  onUploadState,
 }: {
   block: ContentBlock;
   state: BlockState;
   onRecordingDone: (durationSec: number) => void;
+  onUploadState: (patch: {
+    uploading?: boolean;
+    mediaId?: number;
+    uploadError?: string;
+  }) => void;
 }) {
   const mic = useMicRecorder();
 
-  // Propagate duration when recording is done
+  // Upload as soon as the recording stops, rather than on submit: the student
+  // is reviewing their playback anyway, so the transfer happens in time they
+  // were already spending, and pressing Continue stays instant.
   useEffect(() => {
-    if (mic.status === "done" && mic.durationSec > 0) {
-      onRecordingDone(mic.durationSec);
-    }
+    if (mic.status !== "done" || !mic.blob || mic.durationSec <= 0) return;
+
+    let cancelled = false;
+    onRecordingDone(mic.durationSec);
+    onUploadState({ uploading: true, uploadError: undefined });
+
+    uploadRecording(mic.blob, "lesson_activity", mic.durationSec)
+      .then((r) => {
+        if (!cancelled) onUploadState({ uploading: false, mediaId: r.mediaId });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        onUploadState({
+          uploading: false,
+          uploadError:
+            err instanceof MediaUploadError && err.status === 503
+              ? "خدمة تخزين الصوت غير مفعّلة حالياً."
+              : "تعذّر رفع التسجيل. أعد المحاولة.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  // onRecordingDone/onUploadState are recreated each render; depending on them
+  // would restart the upload on every keystroke elsewhere in the page.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mic.status, mic.durationSec]);
+  }, [mic.status, mic.blob, mic.durationSec]);
 
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
@@ -357,10 +407,27 @@ function SpeakingBlock({
         <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />
       )}
 
-      {/* Disclaimer — Arabic, explicit about no AI scoring */}
+      {/* Honest about what happens to the recording: it is stored, but nothing
+          scores it yet. */}
       <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-lg p-3 leading-relaxed">
-        ملاحظة: لا يتم تقييم التسجيل بالذكاء الاصطناعي في الوقت الحالي. التسجيل محلي فقط ولن يُرفع للسيرفر حتى يتوفر نظام تخزين الصوت الآمن.
+        ملاحظة: يُحفظ تسجيلك ليُقيَّم لاحقاً. لا يوجد تقييم تلقائي للنطق في الوقت الحالي.
       </div>
+
+      {state.uploading && (
+        <p className="text-xs text-center text-muted-foreground">جارٍ رفع التسجيل…</p>
+      )}
+      {state.uploadError && (
+        <p className="text-xs text-center text-destructive">{state.uploadError}</p>
+      )}
+      {state.mediaId !== undefined && !state.uploading && !state.speechVerdict && (
+        <p className="text-xs text-center text-emerald-600">تم حفظ التسجيل.</p>
+      )}
+
+      {state.awaitingVerdict && (
+        <p className="text-xs text-center text-muted-foreground">جارٍ تقييم نطقك…</p>
+      )}
+
+      {state.speechVerdict && <SpeechVerdictCard verdict={state.speechVerdict} />}
 
       <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-border rounded-3xl bg-secondary/20 gap-4">
         {mic.status === "idle" && (
@@ -410,6 +477,98 @@ function SpeakingBlock({
           <p className="text-lg font-medium text-foreground">انقر للتحدث</p>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the speech assessment found.
+ *
+ * Two scores rather than one, because they mean different things and a student
+ * who reads accurately but haltingly should be told which of the two to work
+ * on. The words they missed are named, because "practise these three words" is
+ * advice and "72%" is not.
+ */
+function SpeechVerdictCard({ verdict }: { verdict: AttemptVerdict }) {
+  if (verdict.evaluationStatus === "pending") {
+    return (
+      <div className="p-4 rounded-xl border bg-blue-50 border-blue-200">
+        <p className="text-sm text-blue-900">
+          تم استلام تسجيلك وسيتم تقييمه قريباً.
+        </p>
+      </div>
+    );
+  }
+
+  const metrics = verdict.speechMetrics;
+  const problems = metrics?.problemWords ?? [];
+  const passed = verdict.correct === true;
+
+  return (
+    <div
+      className={`p-4 rounded-xl border space-y-3 ${
+        passed ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"
+      }`}
+    >
+      <div className="flex items-center justify-around gap-2 text-center">
+        {verdict.pronunciationScore !== null && (
+          <div>
+            <div className="text-2xl font-bold tabular-nums">
+              {Math.round(verdict.pronunciationScore)}%
+            </div>
+            <div className="text-[11px] text-muted-foreground">النطق</div>
+          </div>
+        )}
+        {!metrics?.fluencyUnavailable && verdict.fluencyScore !== null && (
+          <div>
+            <div className="text-2xl font-bold tabular-nums">
+              {Math.round(verdict.fluencyScore)}%
+            </div>
+            <div className="text-[11px] text-muted-foreground">الطلاقة</div>
+          </div>
+        )}
+        {metrics?.speechRate !== undefined && (
+          <div>
+            <div className="text-2xl font-bold tabular-nums">
+              {Math.round(metrics.speechRate)}
+            </div>
+            <div className="text-[11px] text-muted-foreground">كلمة/دقيقة</div>
+          </div>
+        )}
+      </div>
+
+      {verdict.feedbackAr && (
+        <p className="text-sm font-medium border-t border-black/5 pt-2">
+          {verdict.feedbackAr}
+        </p>
+      )}
+
+      {problems.length > 0 && (
+        <div className="border-t border-black/5 pt-2">
+          <p className="text-xs text-muted-foreground mb-1">تدرّب على هذه الكلمات:</p>
+          <div className="flex flex-wrap gap-1.5" dir="ltr">
+            {problems.slice(0, 8).map((w) => (
+              <span
+                key={w}
+                className="text-xs font-mono bg-background border rounded-lg px-2 py-0.5"
+              >
+                {w}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {verdict.transcript && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground">
+            ما سمعناه
+          </summary>
+          <p className="mt-1 text-muted-foreground" dir="ltr">
+            {verdict.transcript}
+          </p>
+        </details>
+      )}
     </div>
   );
 }
@@ -587,6 +746,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
       selectedOptionId?: string;
       responseText?: string;
       recordingDurationSeconds?: number;
+      mediaId?: number;
     } = { clientSubmissionId: genClientId() };
 
     if (block.type === "mcq" && st.selectedOptionId) {
@@ -598,6 +758,9 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
       st.recordingDurationSeconds !== undefined
     ) {
       payload.recordingDurationSeconds = st.recordingDurationSeconds;
+      // Only sent once the upload was confirmed; the server rejects an id that
+      // is not a finished recording of this student's.
+      if (st.mediaId !== undefined) payload.mediaId = st.mediaId;
     }
     // passive blocks: just clientSubmissionId
 
@@ -608,6 +771,19 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
           setBlockField(block.id, { submitted: true, submitting: false, result });
           // Invalidate lesson detail so completedBlockIds updates
           queryClient.invalidateQueries({ queryKey: getGetLessonQueryKey(lessonId) });
+
+          // A recording is assessed in the background, so the submit response
+          // can only say "pending". Without this the student would record,
+          // upload, and never find out how they did.
+          if (result.evaluationStatus === "pending" && payload.mediaId !== undefined) {
+            setBlockField(block.id, { awaitingVerdict: true });
+            void pollAttemptVerdict(lessonId, result.attemptId).then((verdict) => {
+              setBlockField(block.id, {
+                awaitingVerdict: false,
+                ...(verdict ? { speechVerdict: verdict } : {}),
+              });
+            });
+          }
         },
         onError: () => {
           setBlockField(block.id, { submitting: false });
@@ -840,6 +1016,14 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
               </div>
             )}
             {isUsableUrl(currentBlock.audioUrl) && <AudioWidget url={currentBlock.audioUrl!} label={currentBlock.audioNote ?? undefined} />}
+
+            {/* The tutor itself. Bounded by the block's configuration — the
+                student sees the remaining turns and minutes throughout. */}
+            <ConversationBlock
+              lessonId={lessonId}
+              blockId={currentBlock.id}
+              prompt={currentBlock.promptAr ?? currentBlock.prompt}
+            />
           </div>
         );
 
@@ -892,6 +1076,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
               block={currentBlock}
               state={st}
               onRecordingDone={(dur) => setBlockField(currentBlock.id, { recordingDurationSeconds: dur, hasRecording: true })}
+              onUploadState={(patch) => setBlockField(currentBlock.id, patch)}
             />
           );
         }

@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startGradingSweeper } from "./services/grading-sweeper";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,9 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Started after the port is bound, not at import time: a sweep runs real
+  // grading, and doing that while the process is still coming up would compete
+  // with the requests it is meant to be ready for.
+  startGradingSweeper();
 });

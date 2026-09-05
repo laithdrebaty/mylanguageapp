@@ -1,42 +1,33 @@
 /**
- * AI Service Abstraction Layer
+ * Shared AI types.
  *
- * This module defines the interface and stub implementation for all AI-powered
- * features in Ascension. No real AI provider is wired in V1 — all methods
- * return a NotImplementedError so the application starts cleanly and callers
- * know exactly when AI is missing.
+ * WHERE CONFIGURATION LIVES
+ * ─────────────────────────
+ * Not here, and not in the environment. Which provider, which model per task,
+ * and how much each plan may use are rows in the database, edited at runtime
+ * from the admin panel at /admin/ai — see `services/ai-config.ts`. The only
+ * AI-related environment variable is `AI_CONFIG_SECRET`, which encrypts the
+ * stored API keys.
  *
- * DESIGN GOALS
- * ─────────────
- * 1. Provider-agnostic: swap OpenAI → Anthropic → local model by changing
- *    one import and the createAIProvider() factory — no route changes.
- * 2. Cost-aware: every public method accepts a UsageContext so rate limiting,
- *    per-user quotas, and cost tracking can be added without touching callers.
- * 3. Async-ready: all methods are async so they can be offloaded to a queue
- *    (see jobs.ts) without changing the calling signature.
- * 4. Failure-safe: real AI calls should NEVER block the core lesson flow.
- *    Use the results as enrichment, not as a gate.
+ * This file used to hold a provider factory keyed off `AI_PROVIDER`. That is
+ * gone: it duplicated the runtime configuration, and it threw at startup on any
+ * value it did not recognise, so a stale `.env` could stop the server booting.
  *
- * HOW TO ADD AN AI PROVIDER LATER
- * ─────────────────────────────────
- *   1. Install the provider SDK (e.g. `pnpm add openai`).
- *   2. Implement AIProvider by creating e.g. `services/ai-providers/openai.ts`.
- *   3. Set AI_PROVIDER=openai and AI_API_KEY=sk-... in the environment.
- *   4. Update createAIProvider() below to instantiate the right class.
- *   5. Nothing else changes.
+ * WHERE THE CALLS LIVE
+ * ────────────────────
+ *   services/ai-config.ts                   — resolve a task's provider, model, key
+ *   services/ai-providers/openai-compatible — the one client for every provider
+ *   services/ai-quota.ts                    — per-plan daily limits and usage logging
+ *
+ * The types below describe what the assessment features return. They are shared
+ * so that a grader, a background job and a route all agree on the shape.
  */
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface UsageContext {
-  /** Database user ID — used for per-user quota tracking */
-  userId: number;
-  /** The subscription plan the user is on — determines AI feature access */
-  subscriptionPlan: string | null;
-  /** Which feature is making the call — used for cost tracking */
-  feature: AIFeature;
-}
-
+/**
+ * Legacy label recorded on `ai_usage_logs.feature` for continuity with rows
+ * written before tasks existed. New code should use `AITask` from
+ * `@workspace/db`; this stays only so old log rows remain interpretable.
+ */
 export type AIFeature =
   | "speaking_evaluation"
   | "pronunciation_evaluation"
@@ -44,100 +35,54 @@ export type AIFeature =
   | "conversation_assist"
   | "conversation_evaluation";
 
+/** Provider/model/token accounting attached to anything an AI produced. */
+export interface AIMeta {
+  provider: string;
+  modelId: string;
+  tokensUsed: number;
+}
+
 export interface SpeakingEvaluationInput {
-  /** Audio data as base64 or a storage URL */
-  audioRef: string;
-  /** The prompt/question the student was responding to */
+  /** A media_assets id for the student's recording. */
+  mediaId: number;
+  /** The text the student was asked to read, when there is one. */
+  referenceText?: string | null;
+  /** The prompt they were responding to, for open speaking. */
   prompt: string;
-  /** Target language (e.g. 'en') */
   targetLanguage: string;
 }
 
 export interface SpeakingEvaluationResult {
-  /** Pronunciation score 0–100 */
+  /**
+   * 0–100. Computed from the alignment between the transcript and the
+   * reference text, not asked of a model: a language model's guess at a
+   * pronunciation score is not reproducible, and this number gates progress.
+   */
   pronunciationScore: number;
-  /** Fluency/content score 0–100 */
-  contentScore: number;
-  /** Transcript of what was detected */
+  /** 0–100, from speech rate, pausing and run length — also computed, not asked. */
+  fluencyScore: number;
   transcript: string;
-  /** Actionable feedback in the student's language */
+  /** The short Arabic sentence a model writes from the numbers above. */
   feedback: string;
-  /** AI cost metadata for tracking */
-  _meta: { provider: string; modelId: string; tokensUsed: number };
+  _meta: AIMeta;
 }
 
 export interface OpenAnswerEvaluationInput {
   question: string;
   studentAnswer: string;
+  /** What a good answer must mention, authored with the question. */
+  keyPoints?: string[];
+  /** The level the answer should be judged against, e.g. "A2.1". */
+  levelCode?: string | null;
   targetLanguage: string;
   learnerLanguage: string;
 }
 
 export interface OpenAnswerEvaluationResult {
-  /** Score 0–100 */
+  /** 0–100. */
   score: number;
   correct: boolean;
+  /** Feedback in the learner's language. */
   feedback: string;
-  _meta: { provider: string; modelId: string; tokensUsed: number };
+  _meta: AIMeta;
 }
-
-// ─── Provider interface ───────────────────────────────────────────────────────
-
-export interface AIProvider {
-  readonly name: string;
-
-  evaluateSpeaking(
-    input: SpeakingEvaluationInput,
-    ctx: UsageContext,
-  ): Promise<SpeakingEvaluationResult>;
-
-  evaluateOpenAnswer(
-    input: OpenAnswerEvaluationInput,
-    ctx: UsageContext,
-  ): Promise<OpenAnswerEvaluationResult>;
-}
-
-// ─── Stub implementation ──────────────────────────────────────────────────────
-
-/**
- * Placeholder that throws a clear error for any AI call.
- * Used until a real provider is configured.
- */
-class NotImplementedAIProvider implements AIProvider {
-  readonly name = "not_implemented";
-
-  evaluateSpeaking(): Promise<SpeakingEvaluationResult> {
-    return Promise.reject(
-      new Error("AI speaking evaluation is not yet configured. Set AI_PROVIDER in the environment."),
-    );
-  }
-
-  evaluateOpenAnswer(): Promise<OpenAnswerEvaluationResult> {
-    return Promise.reject(
-      new Error("AI answer evaluation is not yet configured. Set AI_PROVIDER in the environment."),
-    );
-  }
-}
-
-// ─── Factory ──────────────────────────────────────────────────────────────────
-
-function createAIProvider(): AIProvider {
-  const provider = process.env.AI_PROVIDER;
-
-  switch (provider) {
-    case undefined:
-    case "":
-    case "stub":
-      return new NotImplementedAIProvider();
-
-    // When adding a real provider, add a case here:
-    // case "openai":
-    //   return new OpenAIProvider({ apiKey: process.env.AI_API_KEY! });
-
-    default:
-      throw new Error(`Unknown AI_PROVIDER value: "${provider}". Supported: stub, openai (coming)`);
-  }
-}
-
-// Singleton — created once at startup; swap by restarting the server.
-export const ai: AIProvider = createAIProvider();

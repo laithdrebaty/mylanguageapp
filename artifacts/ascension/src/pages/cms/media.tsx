@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cmsApi } from "@/lib/cms-api";
 import { CMSLayout } from "@/components/cms-layout";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Music, Image, Video, File } from "lucide-react";
+import { Plus, Trash2, Music, Image, Video, File, Upload, Play, Loader2 } from "lucide-react";
 
 function MimeIcon({ mimeType }: { mimeType: string }) {
   if (mimeType.startsWith("audio/")) return <Music className="h-4 w-4 text-indigo-500" />;
@@ -40,6 +40,41 @@ export default function MediaPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // ── Real file upload ────────────────────────────────────────────────────
+  // The form below registers a key someone put in the bucket by hand. This
+  // uploads the file itself, using the same three-step handshake the student
+  // recorder uses: the server signs a PUT, the browser sends the bytes straight
+  // to storage, and the server confirms they landed.
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [uploadStage, setUploadStage] = useState<string | null>(null);
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => cmsApi.media.upload(file, (stage) => setUploadStage(stage)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cms-media"] });
+      toast({ title: "Uploaded" });
+    },
+    onError: (e: any) =>
+      toast({
+        title: "Upload failed",
+        // 503 means storage is not configured on this deployment — a different
+        // problem from a rejected file, and worth saying so.
+        description: e.message,
+        variant: "destructive",
+      }),
+    onSettled: () => {
+      setUploadStage(null);
+      if (fileInput.current) fileInput.current.value = "";
+    },
+  });
+
+  const [preview, setPreview] = useState<{ id: number; url: string } | null>(null);
+  const previewMut = useMutation({
+    mutationFn: (id: number) => cmsApi.media.playbackUrl(id).then((r) => ({ id, url: r.url })),
+    onSuccess: (r) => setPreview(r),
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const totalPages = data ? Math.ceil(data.total / 30) : 1;
 
   return (
@@ -50,12 +85,54 @@ export default function MediaPage() {
             <h1 className="text-2xl font-bold text-gray-900">Media Assets</h1>
             <p className="text-sm text-gray-500 mt-0.5">Audio, image, and video references</p>
           </div>
-          <Button size="sm" onClick={() => setShowForm(f => !f)}><Plus className="h-3.5 w-3.5 mr-1" /> Register Asset</Button>
+          <div className="flex gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept="audio/*,image/*,video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadMut.mutate(file);
+              }}
+            />
+            <Button size="sm" onClick={() => fileInput.current?.click()} disabled={uploadMut.isPending}>
+              {uploadMut.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5 mr-1" />
+              )}
+              {uploadStage ? `${uploadStage}…` : "Upload File"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowForm(f => !f)}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Register Key
+            </Button>
+          </div>
         </div>
 
         <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-xs text-indigo-700">
-          Media files are stored in object storage (CDN/S3). Register the key/URL reference here so content creators can attach them to lessons.
+          <strong>Upload File</strong> sends the file straight to object storage and registers
+          it here. <strong>Register Key</strong> is for a file already in the bucket, put
+          there some other way. Uploading needs storage configured on the API server.
         </div>
+
+        {preview && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Preview</span>
+              <button
+                onClick={() => setPreview(null)}
+                className="text-xs text-gray-400 hover:text-gray-700"
+              >
+                Close
+              </button>
+            </div>
+            <audio controls src={preview.url} className="w-full" />
+            <p className="text-xs text-gray-400">
+              This link is short-lived and only works for signed-in staff.
+            </p>
+          </div>
+        )}
 
         {showForm && (
           <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
@@ -121,6 +198,15 @@ export default function MediaPage() {
                     <td className="px-4 py-2.5 hidden lg:table-cell text-gray-400 text-xs">{m.language ?? "—"}</td>
                     <td className="px-4 py-2.5 hidden lg:table-cell text-gray-400 text-xs">{new Date(m.created_at).toLocaleDateString()}</td>
                     <td className="px-4 py-2.5 text-right">
+                      {String(m.mime_type ?? "").startsWith("audio/") && (
+                        <button
+                          onClick={() => previewMut.mutate(m.id)}
+                          title="Listen"
+                          className="p-1 rounded hover:bg-indigo-50 text-indigo-400"
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button onClick={() => { if (confirm("Delete this reference?")) deleteMut.mutate(m.id); }}
                         className="p-1 rounded hover:bg-red-50 text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
                     </td>

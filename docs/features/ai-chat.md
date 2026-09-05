@@ -1,3 +1,15 @@
+> **Update.** The provider plumbing described below has been replaced. Provider,
+> API key, per-task model and per-plan limits are now database rows edited at
+> `/admin/ai` — see [ai-configuration.md](ai-configuration.md). `services/ai.ts`
+> no longer holds a provider factory, and the `AI_PROVIDER` / `AI_DAILY_LIMIT_*`
+> environment variables are gone. What remains accurate below is the product
+> question this document raises: whether "talk to AI" is a multi-turn
+> conversation or one-shot evaluation. **That is now decided: both.** One-shot
+> evaluation is [open-answer-grading.md](open-answer-grading.md) and
+> [pronunciation.md](pronunciation.md); the multi-turn conversation is
+> [conversation-tutor.md](conversation-tutor.md), with its own sessions and turns
+> tables. This document is kept only for the history of that decision.
+
 # Feature: "Talk to AI" (planned, not built yet)
 
 ## What it's supposed to do

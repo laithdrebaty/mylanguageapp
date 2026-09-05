@@ -1,3 +1,8 @@
+> **Superseded.** The placement test is now multi-skill, with per-skill scores,
+> strengths and weaknesses, a bounded AI adjustment and an administrator review
+> screen — see [placement.md](placement.md). This document describes the original
+> single-score version and is kept for the history.
+
 # Feature: Placement Test
 
 ## What it does

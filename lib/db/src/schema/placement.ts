@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, jsonb } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { levelsTable } from "./levels";
 import { curriculaTable } from "./languages";
@@ -7,7 +7,24 @@ export const placementQuestionsTable = pgTable("placement_questions", {
   id: serial("id").primaryKey(),
   questionText: text("question_text").notNull(),
   questionTextAr: text("question_text_ar").notNull(),
-  type: text("type", { enum: ["mcq", "fill_blank"] }).notNull().default("mcq"),
+  type: text("type", { enum: ["mcq", "fill_blank", "written"] }).notNull().default("mcq"),
+  /**
+   * Which skill this question tests. The whole per-skill breakdown depends on
+   * this being right — an untagged question can only contribute to a total.
+   */
+  skill: text("skill", {
+    enum: ["reading", "listening", "vocabulary", "grammar", "comprehension", "writing"],
+  })
+    .notNull()
+    .default("grammar"),
+  /** Roughly the level this question sits at. Position in the list is not difficulty. */
+  difficulty: text("difficulty", { enum: ["A1", "A2", "B1", "B2", "C1", "C2"] })
+    .notNull()
+    .default("A1"),
+  /** Reading and listening questions share a passage. */
+  passage: text("passage"),
+  mediaId: integer("media_id"),
+  isActive: boolean("is_active").notNull().default(true),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -37,6 +54,25 @@ export const placementResultsTable = pgTable("placement_results", {
   assignedLevelCode: text("assigned_level_code").notNull(),
   /** FK to the actual level record assigned */
   assignedLevelId: integer("assigned_level_id").references(() => levelsTable.id),
+
+  /** One entry per skill tested — what makes strengths and weaknesses possible. */
+  skillScores: jsonb("skill_scores"),
+  strengths: text("strengths").array(),
+  weaknesses: text("weaknesses").array(),
+  /** The AI's reading of the result, in Arabic. Null when AI was unavailable. */
+  analysisAr: text("analysis_ar"),
+
+  writingSample: text("writing_sample"),
+  writingScore: real("writing_score"),
+
+  /**
+   * What the arithmetic produced, before any AI adjustment. Kept so an
+   * adjustment can be traced and reversed — an assignment nobody can explain is
+   * one nobody can defend to a student.
+   */
+  computedLevelCode: text("computed_level_code"),
+  adjustmentReason: text("adjustment_reason"),
+
   completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

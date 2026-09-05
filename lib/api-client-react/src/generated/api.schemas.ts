@@ -153,6 +153,22 @@ export type PlacementQuestionType = typeof PlacementQuestionType[keyof typeof Pl
 export const PlacementQuestionType = {
   mcq: 'mcq',
   fill_blank: 'fill_blank',
+  written: 'written',
+} as const;
+
+/**
+ * Which skill this question tests. Drives the per-skill breakdown.
+ */
+export type PlacementQuestionSkill = typeof PlacementQuestionSkill[keyof typeof PlacementQuestionSkill];
+
+
+export const PlacementQuestionSkill = {
+  reading: 'reading',
+  listening: 'listening',
+  vocabulary: 'vocabulary',
+  grammar: 'grammar',
+  comprehension: 'comprehension',
+  writing: 'writing',
 } as const;
 
 export type PlacementQuestionOptionsItem = {
@@ -167,6 +183,13 @@ export interface PlacementQuestion {
   questionText: string;
   questionTextAr: string;
   type: PlacementQuestionType;
+  /** Which skill this question tests. Drives the per-skill breakdown. */
+  skill?: PlacementQuestionSkill;
+  /**
+     * Shared reading text, when several questions are about one passage.
+     * @nullable
+     */
+  passage?: string | null;
   options: PlacementQuestionOptionsItem[];
   order?: number;
 }
@@ -175,22 +198,64 @@ export interface PlacementTest {
   questions: PlacementQuestion[];
 }
 
+/**
+ * One answer. Objective questions carry selectedOptionId; a `written` question carries responseText instead.
+ */
 export interface PlacementTestAnswer {
   questionId: number;
-  selectedOptionId: string;
+  /** The student's written answer, for a `written` question. */
+  responseText?: string;
+  selectedOptionId?: string;
 }
 
 export interface PlacementTestSubmission {
   answers: PlacementTestAnswer[];
 }
 
+/**
+ * 0-100 per skill tested. Absent skills were not assessed.
+ * @nullable
+ */
+export type PlacementTestResultSkillScores = {[key: string]: number} | null;
+
 export interface PlacementTestResult {
+  /** Objective questions answered correctly. */
   score: number;
+  /** Objective questions asked. */
   total: number;
+  /** Plain percentage of objective questions correct. Kept for continuity; it is NOT what decided the level. */
   percentage: number;
+  /** The figure the level actually came from — each question weighted by the level it was written for, plus the written answer where there was one. */
+  weightedScore?: number;
   assignedLevelCode: string;
   assignedLevelName: string;
   assignedLevelNameAr: string;
+  /**
+     * What the arithmetic produced, before any AI adjustment.
+     * @nullable
+     */
+  computedLevelCode?: string | null;
+  /** True when AI moved the level from the computed one. */
+  adjusted?: boolean;
+  /** @nullable */
+  adjustmentReason?: string | null;
+  /**
+     * 0-100 per skill tested. Absent skills were not assessed.
+     * @nullable
+     */
+  skillScores?: PlacementTestResultSkillScores;
+  strengths?: string[];
+  weaknesses?: string[];
+  /**
+     * Null when there was no written question, or AI was unavailable.
+     * @nullable
+     */
+  writingScore?: number | null;
+  /**
+     * The AI's reading of the result. Null when AI was unavailable.
+     * @nullable
+     */
+  analysisAr?: string | null;
   message: string;
   messageAr: string;
 }
@@ -289,6 +354,109 @@ export interface LevelDetail {
   lessons: LessonSummary[];
 }
 
+/**
+ * Why the gate is shut. Null when it is open.
+ */
+export type EvaluationEligibilityCode = typeof EvaluationEligibilityCode[keyof typeof EvaluationEligibilityCode] | null;
+
+
+export const EvaluationEligibilityCode = {
+  NOT_PLACED: 'NOT_PLACED',
+  NO_EVALUATION: 'NO_EVALUATION',
+  NOT_CURRENT_LEVEL: 'NOT_CURRENT_LEVEL',
+  LESSONS_INCOMPLETE: 'LESSONS_INCOMPLETE',
+  COOLDOWN: 'COOLDOWN',
+  ATTEMPTS_EXHAUSTED: 'ATTEMPTS_EXHAUSTED',
+} as const;
+
+export interface EvaluationEligibility {
+  eligible: boolean;
+  /** Why the gate is shut. Null when it is open. */
+  code: EvaluationEligibilityCode;
+  lessonsPassed: number;
+  lessonsTotal: number;
+  /** How much of the level must be finished before the gate opens. */
+  requiredPercent: number;
+  completedPercent: number;
+  attemptsUsed: number;
+  /**
+     * Null when the evaluation allows unlimited attempts.
+     * @nullable
+     */
+  attemptsRemaining: number | null;
+  /**
+     * Set when code is COOLDOWN — the earliest the student may retry.
+     * @nullable
+     */
+  retryAvailableAt: string | null;
+}
+
+export interface LevelEvaluation {
+  quizId: number;
+  title: string;
+  titleAr: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  descriptionAr?: string | null;
+  /** @nullable */
+  levelId: number | null;
+  /** @nullable */
+  timeLimitSec?: number | null;
+  /** @nullable */
+  maxAttempts?: number | null;
+  passingScore: number;
+  /** @nullable */
+  cooldownHours?: number | null;
+}
+
+export interface RemediationLesson {
+  lessonId: number;
+  title: string;
+  titleAr: string;
+  /** @nullable */
+  bestScore: number | null;
+  attempts: number;
+}
+
+export interface LevelEvaluationResponse {
+  evaluation: LevelEvaluation | null;
+  eligibility: EvaluationEligibility;
+  /** Existing lessons to redo before another attempt. Empty when the gate is open. */
+  remediation: RemediationLesson[];
+}
+
+export interface ProgressionLevel {
+  id: number;
+  code: string;
+  name: string;
+  nameAr: string;
+}
+
+export type ProgressionEntryReason = typeof ProgressionEntryReason[keyof typeof ProgressionEntryReason];
+
+
+export const ProgressionEntryReason = {
+  placement: 'placement',
+  evaluation: 'evaluation',
+  admin_override: 'admin_override',
+} as const;
+
+export interface ProgressionEntry {
+  id: number;
+  reason: ProgressionEntryReason;
+  /** @nullable */
+  note?: string | null;
+  createdAt: string;
+  /** Null for the initial placement — the student had no level before. */
+  fromLevel: ProgressionLevel | null;
+  toLevel: ProgressionLevel | null;
+}
+
+export interface ProgressionHistoryResponse {
+  history: ProgressionEntry[];
+}
+
 export type ContentBlockType = typeof ContentBlockType[keyof typeof ContentBlockType];
 
 
@@ -372,6 +540,11 @@ export interface ContentBlock {
   promptAr?: string | null;
   /** @nullable */
   exampleAudio?: string | null;
+  /**
+     * Uploaded reference recording, resolved via GET /media/{id}/url.
+     * @nullable
+     */
+  referenceMediaId?: number | null;
 }
 
 export type LessonDetailLessonType = typeof LessonDetailLessonType[keyof typeof LessonDetailLessonType];
@@ -473,17 +646,31 @@ export interface LessonActivitySubmission {
   selectedOptionId?: string;
   responseText?: string;
   mediaReference?: string;
+  /** A media_assets id from the upload handshake (POST /media/uploads, then .../complete). The server verifies the recording exists and belongs to this student before storing it. */
+  mediaId?: number;
   recordingDurationSeconds?: number;
   timeSpentSeconds?: number;
 }
+
+/**
+ * Per-dimension sub-scores from an AI grading, 0-100. Present only for a graded open-ended answer. The overall score is computed from these in application code, not asked of the model.
+ * @nullable
+ */
+export type LessonActivityResultDimensions = {
+  relevance?: number;
+  grammar?: number;
+  vocabulary?: number;
+  clarity?: number;
+  levelAppropriate?: number;
+} | null;
 
 export type LessonActivityResultEvaluationStatus = typeof LessonActivityResultEvaluationStatus[keyof typeof LessonActivityResultEvaluationStatus];
 
 
 export const LessonActivityResultEvaluationStatus = {
-  not_required: 'not_required',
+  graded: 'graded',
   pending: 'pending',
-  completed: 'completed',
+  skipped: 'skipped',
 } as const;
 
 export interface LessonActivityResult {
@@ -498,6 +685,21 @@ export interface LessonActivityResult {
   explanation: string | null;
   /** @nullable */
   explanationAr: string | null;
+  /**
+     * AI feedback in English, when an open-ended answer was graded.
+     * @nullable
+     */
+  feedback?: string | null;
+  /**
+     * AI feedback in Arabic — what the student is shown.
+     * @nullable
+     */
+  feedbackAr?: string | null;
+  /**
+     * Per-dimension sub-scores from an AI grading, 0-100. Present only for a graded open-ended answer. The overall score is computed from these in application code, not asked of the model.
+     * @nullable
+     */
+  dimensions?: LessonActivityResultDimensions;
   evaluationStatus: LessonActivityResultEvaluationStatus;
 }
 

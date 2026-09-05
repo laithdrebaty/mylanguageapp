@@ -34,6 +34,8 @@ tags:
     description: Admin operations
   - name: languages
     description: Languages and curricula (target/learner language configuration)
+  - name: progression
+    description: Level evaluation gates and promotion history
 
 paths:
   /healthz:
@@ -262,6 +264,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /levels/{levelId}/evaluation:
+    get:
+      operationId: getLevelEvaluation
+      tags: [progression]
+      summary: The evaluation gate on a level, and whether this student may sit it
+      description: >
+        Always 200 for a level that exists. A closed gate is a normal state to
+        render, not an error. `evaluation` is null when the curriculum team has
+        not published an evaluation for this level yet.
+      parameters:
+        - name: levelId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LevelEvaluationResponse"
+        "400":
+          description: Invalid level ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /progression:
+    get:
+      operationId: getProgression
+      tags: [progression]
+      summary: Every level change this student has been through, newest first
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressionHistoryResponse"
 
   # ─── Lessons ────────────────────────────────────────────────────────────────
 
@@ -1022,7 +1066,14 @@ components:
           type: string
         type:
           type: string
-          enum: [mcq, fill_blank]
+          enum: [mcq, fill_blank, written]
+        skill:
+          description: Which skill this question tests. Drives the per-skill breakdown.
+          type: string
+          enum: [reading, listening, vocabulary, grammar, comprehension, writing]
+        passage:
+          description: Shared reading text, when several questions are about one passage.
+          type: ["string", "null"]
         options:
           type: array
           items:
@@ -1048,11 +1099,17 @@ components:
             $ref: "#/components/schemas/PlacementQuestion"
 
     PlacementTestAnswer:
+      description: >
+        One answer. Objective questions carry selectedOptionId; a `written`
+        question carries responseText instead.
       type: object
-      required: [questionId, selectedOptionId]
+      required: [questionId]
       properties:
         questionId:
           type: number
+        responseText:
+          description: The student's written answer, for a `written` question.
+          type: string
         selectedOptionId:
           type: string
 
@@ -1070,10 +1127,21 @@ components:
       required: [score, total, percentage, assignedLevelCode, assignedLevelName, assignedLevelNameAr, message, messageAr]
       properties:
         score:
+          description: Objective questions answered correctly.
           type: number
         total:
+          description: Objective questions asked.
           type: number
         percentage:
+          description: >
+            Plain percentage of objective questions correct. Kept for
+            continuity; it is NOT what decided the level.
+          type: number
+        weightedScore:
+          description: >
+            The figure the level actually came from — each question weighted by
+            the level it was written for, plus the written answer where there
+            was one.
           type: number
         assignedLevelCode:
           type: string
@@ -1081,12 +1149,37 @@ components:
           type: string
         assignedLevelNameAr:
           type: string
+        computedLevelCode:
+          description: What the arithmetic produced, before any AI adjustment.
+          type: ["string", "null"]
+        adjusted:
+          description: True when AI moved the level from the computed one.
+          type: boolean
+        adjustmentReason:
+          type: ["string", "null"]
+        skillScores:
+          description: 0-100 per skill tested. Absent skills were not assessed.
+          type: ["object", "null"]
+          additionalProperties:
+            type: number
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        writingScore:
+          description: Null when there was no written question, or AI was unavailable.
+          type: ["number", "null"]
+        analysisAr:
+          description: The AI's reading of the result. Null when AI was unavailable.
+          type: ["string", "null"]
         message:
           type: string
         messageAr:
           type: string
-
-    # ─── Levels ────────────────────────────────────────────────────────────────
 
     Level:
       type: object
@@ -1179,6 +1272,139 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LessonSummary"
+
+    # ─── Progression ───────────────────────────────────────────────────────────
+
+    EvaluationEligibility:
+      type: object
+      required: [eligible, code, lessonsPassed, lessonsTotal, requiredPercent, completedPercent, attemptsUsed, attemptsRemaining, retryAvailableAt]
+      properties:
+        eligible:
+          type: boolean
+        code:
+          description: Why the gate is shut. Null when it is open.
+          oneOf:
+            - type: string
+              enum: [NOT_PLACED, NO_EVALUATION, NOT_CURRENT_LEVEL, LESSONS_INCOMPLETE, COOLDOWN, ATTEMPTS_EXHAUSTED]
+            - type: "null"
+        lessonsPassed:
+          type: number
+        lessonsTotal:
+          type: number
+        requiredPercent:
+          description: How much of the level must be finished before the gate opens.
+          type: number
+        completedPercent:
+          type: number
+        attemptsUsed:
+          type: number
+        attemptsRemaining:
+          description: Null when the evaluation allows unlimited attempts.
+          type: ["number", "null"]
+        retryAvailableAt:
+          description: Set when code is COOLDOWN — the earliest the student may retry.
+          type: ["string", "null"]
+
+    LevelEvaluation:
+      type: object
+      required: [quizId, title, titleAr, levelId, passingScore]
+      properties:
+        quizId:
+          type: number
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        levelId:
+          type: ["number", "null"]
+        timeLimitSec:
+          type: ["number", "null"]
+        maxAttempts:
+          type: ["number", "null"]
+        passingScore:
+          type: number
+        cooldownHours:
+          type: ["number", "null"]
+
+    RemediationLesson:
+      type: object
+      required: [lessonId, title, titleAr, bestScore, attempts]
+      properties:
+        lessonId:
+          type: number
+        title:
+          type: string
+        titleAr:
+          type: string
+        bestScore:
+          type: ["number", "null"]
+        attempts:
+          type: number
+
+    LevelEvaluationResponse:
+      type: object
+      required: [evaluation, eligibility, remediation]
+      properties:
+        evaluation:
+          oneOf:
+            - $ref: "#/components/schemas/LevelEvaluation"
+            - type: "null"
+        eligibility:
+          $ref: "#/components/schemas/EvaluationEligibility"
+        remediation:
+          description: Existing lessons to redo before another attempt. Empty when the gate is open.
+          type: array
+          items:
+            $ref: "#/components/schemas/RemediationLesson"
+
+    ProgressionLevel:
+      type: object
+      required: [id, code, name, nameAr]
+      properties:
+        id:
+          type: number
+        code:
+          type: string
+        name:
+          type: string
+        nameAr:
+          type: string
+
+    ProgressionEntry:
+      type: object
+      required: [id, reason, createdAt, fromLevel, toLevel]
+      properties:
+        id:
+          type: number
+        reason:
+          type: string
+          enum: [placement, evaluation, admin_override]
+        note:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        fromLevel:
+          description: Null for the initial placement — the student had no level before.
+          oneOf:
+            - $ref: "#/components/schemas/ProgressionLevel"
+            - type: "null"
+        toLevel:
+          oneOf:
+            - $ref: "#/components/schemas/ProgressionLevel"
+            - type: "null"
+
+    ProgressionHistoryResponse:
+      type: object
+      required: [history]
+      properties:
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgressionEntry"
 
     # ─── Lessons ───────────────────────────────────────────────────────────────
 
@@ -1287,6 +1513,9 @@ components:
           type: ["string", "null"]
         exampleAudio:
           type: ["string", "null"]
+        referenceMediaId:
+          description: Uploaded reference recording, resolved via GET /media/{id}/url.
+          type: ["number", "null"]
 
     LessonDetail:
       type: object
@@ -1413,6 +1642,12 @@ components:
           type: string
         mediaReference:
           type: string
+        mediaId:
+          description: >
+            A media_assets id from the upload handshake (POST /media/uploads,
+            then .../complete). The server verifies the recording exists and
+            belongs to this student before storing it.
+          type: number
         recordingDurationSeconds:
           type: number
         timeSpentSeconds:
@@ -1436,9 +1671,35 @@ components:
           type: ["string", "null"]
         explanationAr:
           type: ["string", "null"]
+        feedback:
+          description: AI feedback in English, when an open-ended answer was graded.
+          type: ["string", "null"]
+        feedbackAr:
+          description: AI feedback in Arabic — what the student is shown.
+          type: ["string", "null"]
+        dimensions:
+          description: >
+            Per-dimension sub-scores from an AI grading, 0-100. Present only for
+            a graded open-ended answer. The overall score is computed from these
+            in application code, not asked of the model.
+          type: ["object", "null"]
+          properties:
+            relevance:
+              type: number
+            grammar:
+              type: number
+            vocabulary:
+              type: number
+            clarity:
+              type: number
+            levelAppropriate:
+              type: number
         evaluationStatus:
+          # These are the values the server actually returns. The spec
+          # previously claimed [not_required, pending, completed], which no
+          # code path ever produced.
           type: string
-          enum: [not_required, pending, completed]
+          enum: [graded, pending, skipped]
 
     # ─── Exercises ─────────────────────────────────────────────────────────────
 

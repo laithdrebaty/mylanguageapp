@@ -37,6 +37,51 @@ type QuizBlockType = (typeof QUIZ_BLOCK_TYPES)[number];
 const isQuizBlockType = (v: unknown): v is QuizBlockType =>
   typeof v === "string" && (QUIZ_BLOCK_TYPES as readonly string[]).includes(v);
 
+/**
+ * Turn a database constraint violation into something an author can act on.
+ *
+ * A level may have only one published evaluation, enforced by a partial unique
+ * index. Without this the violation surfaces as a 500 with a Postgres index
+ * name in it, which tells a curriculum manager nothing about what they did
+ * wrong or what to do instead.
+ *
+ * Returns true when it handled the error and sent a response.
+ */
+function handleConstraint(err: unknown, res: import("express").Response): boolean {
+  // Drizzle wraps the driver error, so the Postgres SQLSTATE and constraint
+  // name are on the cause, not on what was thrown. Walking the chain is what
+  // makes this work at all — checking only the top level silently never
+  // matches, and every violation surfaces as a raw 500 with SQL in it.
+  let cursor: unknown = err;
+  let code: string | undefined;
+  let constraint = "";
+
+  for (let depth = 0; cursor && depth < 5; depth++) {
+    const candidate = cursor as { code?: string; constraint?: string; cause?: unknown };
+    if (typeof candidate.code === "string" && !code) code = candidate.code;
+    if (typeof candidate.constraint === "string" && !constraint) {
+      constraint = candidate.constraint;
+    }
+    if (code === "23505") break;
+    cursor = candidate.cause;
+  }
+
+  if (code !== "23505") return false;
+
+  if (constraint.includes("evaluation_per_level")) {
+    res.status(409).json({
+      error:
+        "This level already has a published evaluation. Unpublish it first, " +
+        "or publish this one after archiving the old one.",
+      code: "EVALUATION_ALREADY_PUBLISHED",
+    });
+    return true;
+  }
+
+  res.status(409).json({ error: "That change conflicts with an existing record." });
+  return true;
+}
+
 /** Statuses a content_manager may not mutate; only an admin can, post-unpublish. */
 const LOCKED_STATUSES = ["published", "archived"];
 
@@ -115,12 +160,39 @@ router.get("/cms/quizzes/:id", requireCMSAccess, async (req, res): Promise<void>
   res.json({ ...quiz, blocks });
 });
 
+/**
+ * Guard the level_evaluation shape before it reaches the database.
+ *
+ * The same rules exist as CHECK constraints in migration 004 — this layer is
+ * here to turn them into an editable message for the curriculum team instead of
+ * a 500 from a constraint violation.
+ */
+function validateEvaluationShape(
+  kind: unknown,
+  levelId: unknown,
+  cooldownHours: unknown,
+): string | null {
+  if (kind !== undefined && kind !== null && kind !== "practice" && kind !== "level_evaluation") {
+    return "kind must be 'practice' or 'level_evaluation'";
+  }
+  if (kind === "level_evaluation" && (levelId === undefined || levelId === null)) {
+    return "A level evaluation must be attached to a level (levelId is required)";
+  }
+  if (
+    cooldownHours !== undefined && cooldownHours !== null &&
+    (typeof cooldownHours !== "number" || !Number.isInteger(cooldownHours) || cooldownHours < 0)
+  ) {
+    return "cooldownHours must be a non-negative whole number of hours";
+  }
+  return null;
+}
+
 /** Create a quiz. Starts in draft with an empty timeline. */
 router.post("/cms/quizzes", requireContentManager, async (req, res): Promise<void> => {
   const {
     title, titleAr, description, descriptionAr, instructions, instructionsAr,
     levelId, timeLimitSec, maxAttempts, passingScore, xpReward,
-    shuffleBlocks, revealAnswers, tags, teacherNotes,
+    shuffleBlocks, revealAnswers, tags, teacherNotes, kind, cooldownHours,
   } = req.body;
 
   if (!title || !titleAr) {
@@ -128,7 +200,15 @@ router.post("/cms/quizzes", requireContentManager, async (req, res): Promise<voi
     return;
   }
 
-  const [quiz] = await db.insert(quizzesTable).values({
+  const kindError = validateEvaluationShape(kind, levelId, cooldownHours);
+  if (kindError) {
+    res.status(400).json({ error: kindError });
+    return;
+  }
+
+  let quiz;
+  try {
+    [quiz] = await db.insert(quizzesTable).values({
     title, titleAr,
     description: description ?? null,
     descriptionAr: descriptionAr ?? null,
@@ -141,10 +221,16 @@ router.post("/cms/quizzes", requireContentManager, async (req, res): Promise<voi
     xpReward: xpReward ?? 50,
     shuffleBlocks: shuffleBlocks ?? false,
     revealAnswers: revealAnswers ?? "after_submit",
+    kind: kind ?? "practice",
+    cooldownHours: cooldownHours ?? null,
     tags: tags ?? null,
     teacherNotes: teacherNotes ?? null,
-    createdBy: req.session.userId!,
-  }).returning();
+      createdBy: req.session.userId!,
+    }).returning();
+  } catch (err) {
+    if (handleConstraint(err, res)) return;
+    throw err;
+  }
 
   await audit(req.session.userId!, "create", "quiz", quiz.id, null, quiz.status, { title });
   res.status(201).json(quiz);
@@ -162,6 +248,7 @@ router.patch("/cms/quizzes/:id", requireContentManager, async (req, res): Promis
     "title", "titleAr", "description", "descriptionAr", "instructions",
     "instructionsAr", "levelId", "timeLimitSec", "maxAttempts", "passingScore",
     "xpReward", "shuffleBlocks", "revealAnswers", "tags", "teacherNotes",
+    "kind", "cooldownHours",
   ] as const;
 
   const patch: Record<string, unknown> = {};
@@ -173,8 +260,27 @@ router.patch("/cms/quizzes/:id", requireContentManager, async (req, res): Promis
     return;
   }
 
-  const [updated] = await db.update(quizzesTable).set(patch)
-    .where(eq(quizzesTable.id, id)).returning();
+  // Validate against the quiz as it will be, not as it was — clearing levelId
+  // and setting kind in the same request must not slip past a field-by-field
+  // check.
+  const kindError = validateEvaluationShape(
+    "kind" in patch ? patch.kind : quiz.kind,
+    "levelId" in patch ? patch.levelId : quiz.levelId,
+    "cooldownHours" in patch ? patch.cooldownHours : quiz.cooldownHours,
+  );
+  if (kindError) {
+    res.status(400).json({ error: kindError });
+    return;
+  }
+
+  let updated;
+  try {
+    [updated] = await db.update(quizzesTable).set(patch)
+      .where(eq(quizzesTable.id, id)).returning();
+  } catch (err) {
+    if (handleConstraint(err, res)) return;
+    throw err;
+  }
 
   await audit(req.session.userId!, "update", "quiz", id, quiz.status, updated.status, {
     fields: Object.keys(patch),
@@ -233,7 +339,7 @@ router.post("/cms/quizzes/:id/blocks", requireContentManager, async (req, res): 
   const {
     title, titleAr, instructions, instructionsAr, content, contentAr,
     audioNote, prompt, promptAr, exampleAudio, isRequired,
-    estimatedMinutes, config,
+    estimatedMinutes, config, expectsReferenceReading, referenceMediaId,
   } = req.body;
 
   const [block] = await db.insert(contentBlocksTable).values({
@@ -249,6 +355,10 @@ router.post("/cms/quizzes/:id/blocks", requireContentManager, async (req, res): 
     isRequired: isRequired ?? true,
     estimatedMinutes: estimatedMinutes ?? null,
     config: config ?? null,
+    // Decides whether a spoken answer can be scored for pronunciation at all:
+    // without a set passage there is nothing to align a transcript against.
+    expectsReferenceReading: expectsReferenceReading ?? false,
+    referenceMediaId: referenceMediaId ?? null,
   }).returning();
 
   await audit(req.session.userId!, "create", "content_block", block.id, null, null, {
@@ -277,6 +387,7 @@ router.patch("/cms/quizzes/:id/blocks/:blockId", requireContentManager, async (r
     "type", "order", "title", "titleAr", "instructions", "instructionsAr",
     "content", "contentAr", "audioNote", "prompt", "promptAr", "exampleAudio",
     "isRequired", "estimatedMinutes", "isActive", "config",
+    "expectsReferenceReading", "referenceMediaId",
   ] as const;
 
   const patch: Record<string, unknown> = {};
@@ -397,14 +508,20 @@ function transition(
       return;
     }
 
-    const [updated] = await db.update(quizzesTable)
-      .set({
-        status: next,
+    let updated;
+    try {
+      [updated] = await db.update(quizzesTable)
+        .set({
+          status: next,
         // Publishing an edited quiz bumps the version so in-flight attempts
         // stay pinned to the version the student actually saw.
-        ...(next === "published" ? { contentVersion: quiz.contentVersion + 1 } : {}),
-      })
-      .where(eq(quizzesTable.id, id)).returning();
+          ...(next === "published" ? { contentVersion: quiz.contentVersion + 1 } : {}),
+        })
+        .where(eq(quizzesTable.id, id)).returning();
+    } catch (err) {
+      if (handleConstraint(err, res)) return;
+      throw err;
+    }
 
     await audit(req.session.userId!, path, "quiz", id, quiz.status, next, {});
     res.json({ id: updated.id, status: updated.status });

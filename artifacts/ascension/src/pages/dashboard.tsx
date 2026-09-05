@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { SkillProfileCard } from "@/components/skill-profile-card";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetDashboard, getGetDashboardQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -226,6 +227,12 @@ export default function Dashboard() {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Skills — strengths, weaknesses, and what to do about them */}
+        <div className="space-y-6">
+          <h2 className="text-xl font-bold text-foreground">تقدّمك</h2>
+          <SkillProfileCard />
         </div>
 
         {/* Recent Activity */}

@@ -88,6 +88,11 @@ export function sanitizeBlockForStudent<T extends { type: string; config: unknow
   return { ...rest, config: safe };
 }
 
+export interface GradeOptions {
+  /** True when a verified recording is attached to this response. */
+  hasMedia?: boolean;
+}
+
 export interface GradeResult {
   /** 0-100 for this block, or null when it awaits AI/teacher assessment. */
   score: number | null;
@@ -105,14 +110,17 @@ export function gradeResponse(
   blockType: string,
   config: QuizBlockConfig | null,
   response: unknown,
+  opts: GradeOptions = {},
 ): GradeResult {
   if (isNonScoring(blockType)) {
     return { score: 100, gradedBy: "auto", feedback: null };
   }
 
-  // Nothing was submitted. There is nothing for an AI or a teacher to assess,
-  // so this scores zero now rather than sitting pending forever.
-  if (isBlankResponse(response)) {
+  // A spoken answer carries no `response` — the student's words are in the
+  // uploaded recording. Treating that as blank would score a completed speaking
+  // task zero, so an attached recording counts as an answer and the block waits
+  // for assessment like any other open-ended one.
+  if (isBlankResponse(response) && !opts.hasMedia) {
     return { score: 0, gradedBy: "auto", feedback: "No answer submitted." };
   }
 

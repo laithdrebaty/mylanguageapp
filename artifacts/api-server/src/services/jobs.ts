@@ -9,8 +9,10 @@
  *   - Heavy report generation
  *
  * V1: all jobs run in-process using setImmediate — fire-and-forget, no queue.
- * This is correct for the current load. Failures are logged but do not surface
- * to the student.
+ * This is correct for the current load, with one consequence worth knowing:
+ * a job is lost if the process restarts between enqueue and run. Every handler
+ * is therefore written so that not running is survivable — grading left
+ * pending can be retried, and nothing depends on a job having happened.
  *
  * TO ADD A REAL QUEUE (Bull, BullMQ, pg-boss) LATER
  * ───────────────────────────────────────────────────
@@ -29,44 +31,53 @@ import { logger } from "../lib/logger";
 // ─── Job definitions ──────────────────────────────────────────────────────────
 
 export type JobName =
-  | "evaluate_speaking"
-  | "evaluate_open_answer"
+  | "grade_quiz_attempt"
+  | "assess_speaking_activity"
   | "send_notification"
-  | "aggregate_usage"
   | "process_audio";
 
 export interface JobPayload {
-  evaluate_speaking: {
-    userId: number;
-    lessonId: number;
-    exerciseId: number;
-    audioRef: string;
-    prompt: string;
-    targetLanguage: string;
-  };
-  evaluate_open_answer: {
-    userId: number;
-    lessonId: number;
-    exerciseId: number;
-    question: string;
-    studentAnswer: string;
-    targetLanguage: string;
-    learnerLanguage: string;
-  };
+  /**
+   * Grade every text answer in a submitted attempt, then re-finalise it — and
+   * apply promotion if it was a level evaluation. Off the request because an
+   * exam with several written answers is several model calls, and a submit
+   * must not hang on them.
+   *
+   * The payload is only an id: everything else is read fresh when the job runs,
+   * so a job that fires late cannot act on a stale copy of the attempt.
+   */
+  grade_quiz_attempt: { attemptId: number };
+  /**
+   * Assess one recording submitted inside a lesson. Off the request because it
+   * downloads audio and waits on a speech recogniser — seconds of work that
+   * must not hold a lesson open.
+   */
+  assess_speaking_activity: { activityAttemptId: number };
   send_notification: {
     userId: number;
     type: string;
     payload: Record<string, unknown>;
   };
-  aggregate_usage: {
-    userId: number;
-    feature: string;
-    count: number;
-  };
   process_audio: {
     audioRef: string;
     targetFormat: string;
   };
+}
+
+/** What a handler does with a payload. Registered at startup. */
+export type JobHandler<N extends JobName> = (payload: JobPayload[N]) => Promise<void>;
+
+const handlers = new Map<JobName, JobHandler<JobName>>();
+
+/**
+ * Register the function that runs a job.
+ *
+ * Handlers are registered rather than imported here so this module stays free
+ * of dependencies on the services it runs — importing the grading runner from
+ * the queue, and the queue from the grading runner, would be a cycle.
+ */
+export function registerJobHandler<N extends JobName>(name: N, handler: JobHandler<N>): void {
+  handlers.set(name, handler as JobHandler<JobName>);
 }
 
 // ─── Queue interface ──────────────────────────────────────────────────────────
@@ -82,12 +93,31 @@ export interface JobQueue {
 // ─── In-process fire-and-forget implementation ────────────────────────────────
 
 class FireAndForgetQueue implements JobQueue {
-  enqueue<N extends JobName>(name: N, payload: JobPayload[N]): void {
-    setImmediate(() => {
-      // In V1 jobs are no-ops — they log so you can see what would be queued.
-      // Replace this with actual handlers as features are implemented.
-      logger.info({ job: name, payload }, "Job enqueued (in-process stub)");
-    });
+  enqueue<N extends JobName>(name: N, payload: JobPayload[N], options?: { delayMs?: number }): void {
+    const run = () => {
+      const handler = handlers.get(name);
+      if (!handler) {
+        logger.warn({ job: name }, "Job enqueued with no registered handler");
+        return;
+      }
+
+      const started = Date.now();
+      // Nothing awaits this. A job that throws must not become an unhandled
+      // rejection that takes the process down, so every path is caught here.
+      void handler(payload)
+        .then(() => {
+          logger.info({ job: name, ms: Date.now() - started }, "Job completed");
+        })
+        .catch((err: unknown) => {
+          logger.error({ err, job: name, payload }, "Job failed");
+        });
+    };
+
+    if (options?.delayMs && options.delayMs > 0) {
+      setTimeout(run, options.delayMs).unref?.();
+    } else {
+      setImmediate(run);
+    }
   }
 }
 

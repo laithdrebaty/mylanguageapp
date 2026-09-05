@@ -3,7 +3,7 @@
  * These are internal admin tables not exposed to students.
  */
 
-import { pgTable, text, serial, integer, real, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, real, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { lessonsTable } from "./levels";
 
@@ -14,7 +14,7 @@ import { lessonsTable } from "./levels";
  */
 export const mediaAssetsTable = pgTable("media_assets", {
   id: serial("id").primaryKey(),
-  /** Storage key / URL reference. Format depends on storage provider. */
+  /** Storage key / URL reference. Always generated server-side, never client-supplied. */
   key: text("key").notNull(),
   originalName: text("original_name"),
   mimeType: text("mime_type").notNull(),
@@ -24,9 +24,46 @@ export const mediaAssetsTable = pgTable("media_assets", {
   speaker: text("speaker"),
   accent: text("accent"),
   transcript: text("transcript"),
-  createdBy: integer("created_by").references(() => usersTable.id),
+
+  /**
+   * The student whose recording this is. Null means curriculum material — a
+   * reference reading, a listening clip — which any authenticated student may
+   * play. A non-null owner may only be played back by that student or by staff
+   * grading their work.
+   */
+  ownerUserId: integer("owner_user_id").references(() => usersTable.id, {
+    onDelete: "cascade",
+  }),
+
+  /**
+   * pending  — presigned, bytes not confirmed in the bucket yet
+   * ready    — the object was found at the expected key and passed its checks
+   * failed   — confirmation was attempted and the object was missing or invalid
+   *
+   * Only `ready` assets may be attached to an attempt. A row sitting at
+   * `pending` is an upload the browser started and never finished.
+   */
+  status: text("status", { enum: ["pending", "ready", "failed"] })
+    .notNull()
+    .default("ready"),
+
+  /** What the upload is for — 'lesson_activity', 'quiz_response', 'curriculum'. */
+  purpose: text("purpose").notNull().default("curriculum"),
+
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }),
+
+  /**
+   * Who uploaded it. Set null rather than blocking when that account is
+   * deleted — a student's recordings cascade away with them, but an orphaned
+   * authorship record must not make the account undeletable.
+   */
+  createdBy: integer("created_by").references(() => usersTable.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  ownerIdx: index("media_assets_owner_idx").on(table.ownerUserId, table.createdAt),
+}));
 
 export type MediaAsset = typeof mediaAssetsTable.$inferSelect;
 

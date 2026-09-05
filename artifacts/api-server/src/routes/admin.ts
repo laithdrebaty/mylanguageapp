@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import {
   db, usersTable, studentSubscriptionsTable, lessonProgressTable,
-  lessonsTable,
+  lessonsTable, levelsTable, studentProfilesTable, placementResultsTable,
 } from "@workspace/db";
 import { requireAdmin } from "../middlewares/auth";
 import { invalidate, invalidatePrefix, CK } from "../services/cache";
+import { setStudentLevel, getProgressionHistory } from "../services/progression";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,157 @@ router.get("/admin/students", requireAdmin, async (req, res): Promise<void> => {
     page,
     limit,
   });
+});
+
+/**
+ * Override a student's level (spec section 2: "The administrator must be able
+ * to review/override the placement").
+ *
+ * A note is required. An unexplained level change is indistinguishable from a
+ * mistake six months later, and this is the one endpoint that can move a
+ * student without them having earned it.
+ */
+router.post("/admin/students/:userId/level", requireAdmin, async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const studentId = parseInt(raw as string, 10);
+  const { levelId, note } = req.body ?? {};
+
+  if (isNaN(studentId)) {
+    res.status(400).json({ error: "Invalid student ID" }); return;
+  }
+  if (typeof levelId !== "number" || !Number.isInteger(levelId)) {
+    res.status(400).json({ error: "levelId is required" }); return;
+  }
+  if (typeof note !== "string" || note.trim().length === 0) {
+    res.status(400).json({ error: "A note explaining the override is required" }); return;
+  }
+
+  const [student] = await db.select().from(usersTable)
+    .where(eq(usersTable.id, studentId)).limit(1);
+  if (!student || student.role !== "student") {
+    res.status(404).json({ error: "Student not found" }); return;
+  }
+
+  const [level] = await db.select().from(levelsTable)
+    .where(eq(levelsTable.id, levelId)).limit(1);
+  if (!level) {
+    res.status(404).json({ error: "Level not found" }); return;
+  }
+
+  // Moving a student to a level in a curriculum they are not enrolled in would
+  // leave them with a level their lessons query can never match. Reject it
+  // rather than stranding them on an empty dashboard.
+  const [profile] = await db.select().from(studentProfilesTable)
+    .where(eq(studentProfilesTable.userId, studentId)).limit(1);
+
+  if (profile?.curriculumId && profile.curriculumId !== level.curriculumId) {
+    res.status(409).json({
+      error: "That level belongs to a different curriculum than the student is enrolled in",
+      code: "CURRICULUM_MISMATCH",
+    });
+    return;
+  }
+
+  const result = await setStudentLevel({
+    userId: studentId,
+    curriculumId: level.curriculumId,
+    toLevelId: levelId,
+    reason: "admin_override",
+    decidedByUserId: req.session.userId!,
+    note: note.trim(),
+  });
+
+  res.json({
+    studentId,
+    fromLevelId: result?.fromLevelId ?? null,
+    toLevelId: levelId,
+    toLevelCode: level.code,
+    toLevelName: level.name,
+    toLevelNameAr: level.nameAr,
+  });
+});
+
+/**
+ * Everything needed to review a placement (spec section 2).
+ *
+ * The per-skill breakdown is the point: an administrator asked to confirm or
+ * override a level cannot judge "58%" but can judge "reading 80, grammar 35".
+ * The computed level is shown alongside the assigned one so an AI adjustment is
+ * visible rather than silently baked in.
+ */
+router.get("/admin/students/:userId/placement", requireAdmin, async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const studentId = parseInt(raw as string, 10);
+  if (isNaN(studentId)) {
+    res.status(400).json({ error: "Invalid student ID" }); return;
+  }
+
+  const [result] = await db
+    .select()
+    .from(placementResultsTable)
+    .where(eq(placementResultsTable.userId, studentId))
+    .orderBy(desc(placementResultsTable.completedAt))
+    .limit(1);
+
+  const [profile] = await db
+    .select({
+      currentLevelId: studentProfilesTable.currentLevelId,
+      curriculumId: studentProfilesTable.curriculumId,
+      placementCompleted: studentProfilesTable.placementCompleted,
+    })
+    .from(studentProfilesTable)
+    .where(eq(studentProfilesTable.userId, studentId))
+    .limit(1);
+
+  // Only levels from the student's own curriculum: offering an override to a
+  // level in a different curriculum would strand them, and the override
+  // endpoint rejects it anyway.
+  const levels = profile?.curriculumId
+    ? await db
+        .select({
+          id: levelsTable.id,
+          code: levelsTable.code,
+          name: levelsTable.name,
+          nameAr: levelsTable.nameAr,
+        })
+        .from(levelsTable)
+        .where(eq(levelsTable.curriculumId, profile.curriculumId))
+        .orderBy(levelsTable.order)
+    : [];
+
+  res.json({
+    placement: result
+      ? {
+          completedAt: result.completedAt,
+          score: result.score,
+          total: result.total,
+          percentage: result.percentage,
+          assignedLevelCode: result.assignedLevelCode,
+          computedLevelCode: result.computedLevelCode,
+          adjustmentReason: result.adjustmentReason,
+          skillScores: result.skillScores,
+          strengths: result.strengths,
+          weaknesses: result.weaknesses,
+          analysisAr: result.analysisAr,
+          writingSample: result.writingSample,
+          writingScore: result.writingScore,
+        }
+      : null,
+    currentLevelId: profile?.currentLevelId ?? null,
+    placementCompleted: profile?.placementCompleted ?? false,
+    levels,
+    history: await getProgressionHistory(studentId),
+  });
+});
+
+/** Every level change this student has been through, newest first. */
+router.get("/admin/students/:userId/progression", requireAdmin, async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+  const studentId = parseInt(raw as string, 10);
+  if (isNaN(studentId)) {
+    res.status(400).json({ error: "Invalid student ID" }); return;
+  }
+  res.json({ history: await getProgressionHistory(studentId) });
 });
 
 router.get("/admin/lessons", requireAdmin, async (req, res): Promise<void> => {

@@ -36,7 +36,7 @@ User progress, scores, XP, active subscription status, auth/session data, AI usa
 
 ## AI quota (services/ai-quota.ts)
 - `checkAndIncrement(ctx)` — INCR key atomically; if Redis down, throws (fail closed)
-- Daily limits: free=0, general_english=5 (AI_DAILY_LIMIT_GENERAL), professional_english=20 (AI_DAILY_LIMIT_PRO), admin=∞
+- Daily limits are per plan AND per task, read from the `ai_plan_policies` table at call time and edited in the admin panel at /admin/ai (see docs/features/ai-configuration.md). They are no longer environment variables. Seeded defaults: free=0, general_english=5, professional_english=20, admin=unlimited (-1).
 - `recordUsage(record)` — INSERT to ai_usage_logs PostgreSQL table (persistent billing/audit)
 - `acquireLock(userId)` — SET NX EX 60 to prevent concurrent AI requests per user
 
