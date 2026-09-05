@@ -17,6 +17,7 @@ import Level from '@/pages/level';
 import Lesson from '@/pages/lesson';
 import Quiz from '@/pages/quiz';
 import Vocabulary from '@/pages/vocabulary';
+import Practice from '@/pages/practice';
 import Subscription from '@/pages/subscription';
 import Profile from '@/pages/profile';
 import AdminDashboard from '@/pages/admin/dashboard';
@@ -37,6 +38,7 @@ import CMSQuizzesList from '@/pages/cms/quizzes-list';
 import CMSGradingQueue from '@/pages/cms/grading';
 import CMSQuizEditor from '@/pages/cms/quiz-editor';
 import AuditLogPage from '@/pages/cms/audit';
+import CMSPracticeReports from '@/pages/cms/practice-reports';
 
 const queryClient = new QueryClient();
 
@@ -66,6 +68,7 @@ function Router() {
         <ProtectedRoute path="/lesson/:lessonId" component={Lesson} />
         <ProtectedRoute path="/quiz/:quizId" component={Quiz} />
         <ProtectedRoute path="/vocabulary" component={Vocabulary} />
+        <ProtectedRoute path="/practice" component={Practice} />
         <ProtectedRoute path="/subscription" component={Subscription} />
         <ProtectedRoute path="/profile" component={Profile} />
 
@@ -89,6 +92,7 @@ function Router() {
         <ProtectedRoute path="/cms/vocabulary" component={VocabularyPage} requireCMS />
         <ProtectedRoute path="/cms/media" component={MediaPage} requireCMS />
         <ProtectedRoute path="/cms/grading" component={CMSGradingQueue} requireCMS />
+        <ProtectedRoute path="/cms/practice-reports" component={CMSPracticeReports} requireCMS />
         <ProtectedRoute path="/cms/reviews" component={ReviewsPage} requireCMS />
         <ProtectedRoute path="/cms/audit" component={AuditLogPage} requireCMS />
 

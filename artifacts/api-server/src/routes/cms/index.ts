@@ -8,6 +8,7 @@ import mediaRouter from "./media";
 import reviewsRouter from "./reviews";
 import gradingRouter from "./grading";
 import quizzesRouter from "./quizzes";
+import practiceReportsRouter from "./practice-reports";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(mediaRouter);
 router.use(reviewsRouter);
 router.use(gradingRouter);
 router.use(quizzesRouter);
+router.use(practiceReportsRouter);
 
 export default router;

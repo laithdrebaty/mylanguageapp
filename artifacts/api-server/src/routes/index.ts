@@ -18,6 +18,7 @@ import progressionRouter from "./progression";
 import mediaRouter from "./media";
 import adminAiRouter from "./admin-ai";
 import conversationRouter from "./conversation";
+import practiceRouter from "./practice";
 
 const router: IRouter = Router();
 
@@ -39,6 +40,7 @@ router.use(progressionRouter);
 router.use(mediaRouter);
 router.use(adminAiRouter);
 router.use(conversationRouter);
+router.use(practiceRouter);
 router.use(cmsRouter);
 
 export default router;

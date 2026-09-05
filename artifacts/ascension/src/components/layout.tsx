@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { BookOpen, GraduationCap, Home, User as UserIcon, BookMarked, Settings, LogOut, Loader2, Crown } from "lucide-react";
+import { BookOpen, GraduationCap, Home, User as UserIcon, BookMarked, Mic, Settings, LogOut, Loader2, Crown } from "lucide-react";
 import { useGetMe, useLogout } from "@workspace/api-client-react";
 import { Button } from "./ui/button";
 
@@ -33,6 +33,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { href: "/dashboard", label: "الرئيسية", icon: Home },
     { href: "/learn", label: "المنهج", icon: BookOpen },
     { href: "/vocabulary", label: "المفردات", icon: BookMarked },
+    { href: "/practice", label: "تدريب صوتي", icon: Mic },
     { href: "/profile", label: "حسابي", icon: UserIcon },
   ];
 

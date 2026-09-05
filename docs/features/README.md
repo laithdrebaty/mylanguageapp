@@ -26,6 +26,7 @@ This folder has one file per feature: what it does, how it works, and a plain-En
 | Skill profile & weaknesses | [weakness-engine.md](weakness-engine.md) | New | No history: computed fresh each time, so there is no progress-over-time view |
 | AI conversation tutor | [conversation-tutor.md](conversation-tutor.md) | New | The per-plan daily limit counts model calls, so it can silently truncate a long block |
 | Multi-skill placement | [placement.md](placement.md) | New | Listening, speaking and pronunciation are still not assessed; no CMS screen for questions |
+| Student-to-student voice practice | [voice-practice.md](voice-practice.md) | New | No TURN relay, so roughly 10–20% of calls will not connect — the UI says so rather than hanging |
 
 ## What this tells you overall
 
