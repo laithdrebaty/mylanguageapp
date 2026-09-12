@@ -10,7 +10,7 @@ This folder has one file per feature: what it does, how it works, and a plain-En
 
 | Feature | File | Overall | Top issue |
 |---|---|---|---|
-| Sign up / log in | [auth.md](auth.md) | Good, one gap | Registration/login skip the ready-made input validation (e.g. accepts a fake email address) |
+| Sign up / log in | [auth.md](auth.md) | Good | Validation gap fixed; the first administrator is now created at start from `ADMIN_EMAIL` / `ADMIN_PASSWORD` |
 | Placement test | [placement-test.md](placement-test.md) | Good | No way to retake a placement test once completed |
 | Lessons & levels | [lessons.md](lessons.md) | Very good | `GET /levels` loads every lesson in the database instead of just the current curriculum's — will slow down once German/more curricula are added |
 | Quizzes | [quizzes.md](quizzes.md) | Very good | Quiz time limits are shown to students but not actually enforced by the server |
@@ -32,13 +32,13 @@ This folder has one file per feature: what it does, how it works, and a plain-En
 
 The core learning loop — the part where a student actually studies and gets graded — is the strongest part of the codebase. Scoring, grading, and unlock rules are done properly on the server, answer keys are never leaked to the browser, and a lot of the classic scaling mistakes (fetching everything and filtering in code, querying once per row in a loop) have already been found and fixed in most places. It's clear real care went into this part.
 
-The rougher edges are smaller and more fixable: two places skip validation rules that already exist elsewhere in the codebase (auth), one feature is silently non-functional rather than broken (the streak counter), one repeated performance mistake reappeared in a spot that wasn't fixed yet (`GET /levels`), and a couple of features are announced-but-not-enforced (quiz time limits, AI chat). None of these are "the app doesn't work" problems — they're the kind of thing worth fixing before or shortly after you scale past a handful of users, especially once German is added and traffic grows toward 10k users.
+The rougher edges are smaller and more fixable: one feature is silently non-functional rather than broken (the streak counter), one repeated performance mistake reappeared in a spot that wasn't fixed yet (`GET /levels`), and a couple of features are announced-but-not-enforced (quiz time limits, AI chat). None of these are "the app doesn't work" problems — they're the kind of thing worth fixing before or shortly after you scale past a handful of users, especially once German is added and traffic grows toward 10k users.
 
 ## Suggested priority order
 1. Fix `GET /levels` to filter by curriculum before it becomes a real slowdown (cheap fix, compounds with scale).
 2. Decide what to do about the streak counter (build it or hide it) — showing a permanently-wrong number erodes trust in the product.
-3. Close the auth validation gap (swap in the existing `registerSchema`/`loginSchema`).
-4. Decide if quiz time limits need real enforcement before they're used for anything that matters.
-5. Scope out the real "talk to AI" feature separately — it's a new build, not a fix.
+3. Decide if quiz time limits need real enforcement before they're used for anything that matters.
+4. Scope out the real "talk to AI" feature separately — it's a new build, not a fix.
+5. Decide whether to run a TURN relay for voice practice, or accept that some calls will not connect.
 
 *Reviewed: 2026-08-29. Admin/CMS tools and subscriptions were out of scope for this pass.*

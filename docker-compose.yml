@@ -99,6 +99,11 @@ services:
       # Encrypts API keys stored by the AI settings panel. Dev-only value —
       # generate a real one for any deployment: openssl rand -hex 32
       AI_CONFIG_SECRET: ${AI_CONFIG_SECRET:-dev-only-insecure-ai-config-secret-change-me}
+      # The first administrator, created on start if no administrator exists.
+      # Read from the root .env (copy .env.example), so a deployment changes the
+      # values there rather than anything in the code.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin@1234}
       # Media storage (MinIO locally). Path-style addressing is required:
       # MinIO does not serve buckets as subdomains.
       STORAGE_ENDPOINT: http://storage:9000
