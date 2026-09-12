@@ -3,12 +3,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { copyFile, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+
+// The OpenAPI contract lives in lib/api-spec and is not importable code, so it
+// is copied next to the bundle for src/routes/docs.ts to read at runtime.
+const specSource = path.resolve(artifactDir, "..", "..", "lib", "api-spec", "openapi.yaml");
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -118,6 +122,8 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  await copyFile(specSource, path.resolve(distDir, "openapi.yaml"));
 }
 
 buildAll().catch((err) => {

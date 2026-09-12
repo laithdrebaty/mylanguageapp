@@ -36,11 +36,24 @@ tags:
     description: Languages and curricula (target/learner language configuration)
   - name: progression
     description: Level evaluation gates and promotion history
+  - name: quizzes
+    description: Quizzes and quiz attempts
+  - name: media
+    description: Recording upload handshake and playback URLs
+  - name: conversation
+    description: AI conversation tutor
+  - name: practice
+    description: Student-to-student voice practice
+
+# Every operation requires a logged-in session unless it sets `security: []`.
+security:
+  - cookieAuth: []
 
 paths:
   /healthz:
     get:
       operationId: healthCheck
+      security: []
       tags: [health]
       summary: Health check
       responses:
@@ -56,6 +69,7 @@ paths:
   /auth/register:
     post:
       operationId: register
+      security: []
       tags: [auth]
       summary: Register a new student
       requestBody:
@@ -87,6 +101,7 @@ paths:
   /auth/login:
     post:
       operationId: login
+      security: []
       tags: [auth]
       summary: Login with email and password
       requestBody:
@@ -112,6 +127,7 @@ paths:
   /auth/logout:
     post:
       operationId: logout
+      security: []
       tags: [auth]
       summary: Logout current session
       responses:
@@ -190,6 +206,7 @@ paths:
   /placement-test:
     get:
       operationId: getPlacementTest
+      security: []
       tags: [placement]
       summary: Get placement test questions
       responses:
@@ -230,6 +247,7 @@ paths:
   /levels:
     get:
       operationId: getLevels
+      security: []
       tags: [levels]
       summary: List all curriculum levels for the current student
       responses:
@@ -243,6 +261,7 @@ paths:
   /levels/{levelId}:
     get:
       operationId: getLevel
+      security: []
       tags: [levels]
       summary: Get a single level with its lesson summaries
       parameters:
@@ -539,6 +558,7 @@ paths:
   /vocabulary:
     get:
       operationId: getVocabulary
+      security: []
       tags: [vocabulary]
       summary: Get vocabulary items, optionally filtered by lesson or level
       parameters:
@@ -565,6 +585,7 @@ paths:
   /subscription-plans:
     get:
       operationId: getSubscriptionPlans
+      security: []
       tags: [subscriptions]
       summary: List all available subscription plans
       responses:
@@ -825,6 +846,7 @@ paths:
   /languages:
     get:
       operationId: getLanguages
+      security: []
       tags: [languages]
       summary: List all active languages
       description: >
@@ -844,6 +866,7 @@ paths:
   /curricula:
     get:
       operationId: getCurricula
+      security: []
       tags: [languages]
       summary: List all active curricula
       description: >
@@ -862,7 +885,1091 @@ paths:
                 items:
                   $ref: "#/components/schemas/Curriculum"
 
+  # ─── Media ──────────────────────────────────────────────────────────────────
+  #
+  # Recordings go browser → bucket directly. The server only signs, verifies and
+  # authorises, which is why an upload is three calls rather than one:
+  #   1. POST /media/uploads                → a presigned PUT and a mediaId
+  #   2. PUT  <upload.url>                  → the bytes, straight to the bucket
+  #   3. POST /media/uploads/{id}/complete  → the server confirms they landed
+  # Only after step 3 may the mediaId be attached to an activity, a quiz
+  # response, or a conversation turn.
+
+  /media/config:
+    get:
+      operationId: getMediaConfig
+      tags: [media]
+      summary: What this deployment accepts for recordings
+      description: >
+        Read this before showing a record button. A deployment without object
+        storage configured answers enabled=false, and every upload call would
+        otherwise fail with 503 only after the student had finished speaking.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaConfig"
+
+  /media/uploads:
+    post:
+      operationId: beginMediaUpload
+      tags: [media]
+      summary: Step 1 — reserve a key and get a presigned PUT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaUploadInput"
+      responses:
+        "201":
+          description: Created — upload the bytes to upload.url next
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaUploadTicket"
+        "400":
+          description: Bad purpose, unsupported content type, bad size, or too long
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "413":
+          description: Larger than the per-recording size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "429":
+          description: Today's recording allowance is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "503":
+          description: This deployment has no object storage configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /media/uploads/{mediaId}/complete:
+    post:
+      operationId: completeMediaUpload
+      tags: [media]
+      summary: Step 3 — confirm the bytes landed in the bucket
+      description: >
+        The size and type declared in step 1 were a claim; this is the
+        measurement. An object that overruns the limit is deleted and the asset
+        marked failed, so a client cannot understate its size to get past the
+        cap.
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK — status is "ready" and the asset may now be attached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaUploadResult"
+        "400":
+          description: Invalid id, or no object was found at the expected key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "403":
+          description: This upload belongs to someone else
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "404":
+          description: Upload not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "413":
+          description: The uploaded object exceeds the size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "415":
+          description: The uploaded object is not the declared content type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "503":
+          description: This deployment has no object storage configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /media/{mediaId}/url:
+    get:
+      operationId: getMediaPlaybackUrl
+      tags: [media]
+      summary: A short-lived playback URL for a recording
+      description: >
+        Missing, unfinished and not-yours all answer 404 alike, so iterating ids
+        cannot be used to learn which recordings exist.
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaPlaybackUrl"
+        "400":
+          description: Invalid media ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: This deployment has no object storage configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  # ─── Quizzes ────────────────────────────────────────────────────────────────
+  #
+  # Only published quizzes are served, answer keys are stripped until an attempt
+  # is submitted, and every score is computed server-side — a score sent by a
+  # client is ignored.
+
+  /quizzes:
+    get:
+      operationId: getQuizzes
+      tags: [quizzes]
+      summary: Published quizzes, with this student's best result so far
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizListResponse"
+
+  /quizzes/{quizId}:
+    get:
+      operationId: getQuiz
+      tags: [quizzes]
+      summary: Quiz metadata and its blocks, with answer keys stripped
+      description: >
+        Blocks arrive in a deterministic order — for a shuffling quiz the order
+        is seeded from the quiz and the student, so a reload does not reorder
+        them mid-attempt.
+      parameters:
+        - name: quizId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizDetail"
+        "400":
+          description: Invalid quiz ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Quiz not found, or not published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /quizzes/{quizId}/attempts:
+    post:
+      operationId: startQuizAttempt
+      tags: [quizzes]
+      summary: Start an attempt, or resume the one already in progress
+      description: >
+        Resuming is not a new attempt and does not consume the allowance — an
+        attempt already in progress comes back with resumed=true and a 200,
+        while a genuinely new one answers 201.
+      parameters:
+        - name: quizId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Resumed the attempt already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizAttemptStart"
+        "201":
+          description: A new attempt was created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizAttemptStart"
+        "400":
+          description: Invalid quiz ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: >
+            This is a level evaluation and its gate is shut — the body carries
+            the eligibility detail explaining why.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizEvaluationBlocked"
+        "404":
+          description: Quiz not found, or not published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Every permitted attempt has been used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /quiz-attempts/{attemptId}:
+    get:
+      operationId: getQuizAttempt
+      tags: [quizzes]
+      summary: Review an attempt
+      description: >
+        Answer keys, per-block scores and feedback appear only once the attempt
+        has been submitted; before that they are withheld, because revealing
+        them mid-attempt would give the answers away.
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizAttemptReview"
+        "400":
+          description: Invalid attempt ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Attempt not found, or not this student's
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /quiz-attempts/{attemptId}/responses/{blockId}:
+    put:
+      operationId: saveQuizResponse
+      tags: [quizzes]
+      summary: Save (or overwrite) the answer to one block
+      description: >
+        An upsert — re-answering a block replaces the previous response. A
+        mediaId is accepted only after the upload handshake has completed and
+        the recording is confirmed to belong to this student; the stored key is
+        derived from the verified asset, never from the request.
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: blockId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizResponseInput"
+      responses:
+        "200":
+          description: Saved. Grading fields are never echoed while the attempt is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizResponseSaved"
+        "400":
+          description: Invalid id, or the attached recording was rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "404":
+          description: Attempt not found, block not on this quiz, or recording not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "409":
+          description: This attempt has already been submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /quiz-attempts/{attemptId}/submit:
+    post:
+      operationId: submitQuizAttempt
+      tags: [quizzes]
+      summary: Submit an attempt for grading
+      description: >
+        Objective blocks are scored immediately. Blocks needing an AI or a
+        teacher are left pending and graded in the background, so the score
+        returned here is over what could be graded so far and pass/fail is
+        withheld (passed=null) until every block has a verdict. Poll
+        GET /quiz-attempts/{attemptId} while pendingReviewCount is above zero.
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizAttemptResult"
+        "400":
+          description: Invalid attempt ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Attempt not found, or not this student's
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: This attempt has already been submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Lesson activity attempts ───────────────────────────────────────────────
+
+  /lessons/{lessonId}/attempts/{attemptId}:
+    get:
+      operationId: getLessonActivityAttempt
+      tags: [lessons]
+      summary: The current verdict on one activity attempt
+      description: >
+        A spoken answer is assessed in the background, so the submit response
+        can only say "pending". This is how a client finds out what it came to
+        without reloading the lesson — poll it a few times after recording,
+        until evaluationStatus is no longer "pending".
+      parameters:
+        - name: lessonId
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonActivityAttemptStatus"
+        "400":
+          description: Invalid attempt ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Attempt not found, or not this student's
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Skills ─────────────────────────────────────────────────────────────────
+
+  /review/skills:
+    get:
+      operationId: getSkillReport
+      tags: [review]
+      summary: Skill profile, with what to work on next
+      description: >
+        The profile and the recommendations are computed from marks already
+        recorded and cost nothing, so this is safe to call on every dashboard
+        load. The Arabic advice sentence costs a model call and is only written
+        when advice=true — and failing to get it does not fail the request.
+      parameters:
+        - name: advice
+          in: query
+          required: false
+          description: Pass "true" to also ask for the Arabic advice sentence.
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillReport"
+
+  # ─── AI conversation tutor ──────────────────────────────────────────────────
+
+  /conversation/active:
+    get:
+      operationId: getActiveConversation
+      tags: [conversation]
+      summary: Resume whatever conversation is open
+      description: >
+        Null when the student has no active session, so a reload does not lose
+        the thread.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveConversationResponse"
+
+  /conversation/start:
+    post:
+      operationId: startConversation
+      tags: [conversation]
+      summary: Open a conversation against a lesson
+      description: >
+        The caps are read from the block's configuration once and copied onto
+        the session, so a curriculum edit mid-conversation cannot change the
+        rules a student is already playing by.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationStartInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationStart"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A conversation is already active, or the lesson has nothing to talk about
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "429":
+          description: The daily AI allowance is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "503":
+          description: AI is switched off or unavailable in this deployment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /conversation/{sessionId}/turn:
+    post:
+      operationId: takeConversationTurn
+      tags: [conversation]
+      summary: One exchange — the student says something, the tutor replies
+      description: >
+        Send either `message` (typed) or `mediaId` (spoken); one of the two is
+        required. A spoken turn is transcribed server-side and the transcript
+        comes back alongside the reply, because the client cannot transcribe and
+        the tutor must be answering what was actually said.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationTurnInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationTurn"
+        "400":
+          description: Invalid session ID, validation error, or neither message nor recording sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "409":
+          description: The session is not active, or a cap has already been reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "429":
+          description: The daily AI allowance is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "503":
+          description: AI is switched off or unavailable in this deployment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /conversation/{sessionId}/end:
+    post:
+      operationId: endConversation
+      tags: [conversation]
+      summary: Close a conversation
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationEnded"
+        "400":
+          description: Invalid session ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Student-to-student voice practice ──────────────────────────────────────
+  #
+  # Two students talk directly over WebRTC: the audio never reaches the server
+  # and is not recorded. What the API provides is the matching, the signalling
+  # mailbox, and the safety tools. This is the only feature where one student's
+  # action affects another, which is why blocking and reporting live here.
+  #
+  # The shape of a call, client-side:
+  #   PUT  /practice/profile          → opt in (isAvailable=true)
+  #   POST /practice/queue            → join the pool; may return a match at once
+  #   POST /practice/poll             → repeatedly, while queued and while calling
+  #   POST /practice/sessions/{id}/accept
+  #   GET  /practice/ice-servers      → what to hand RTCPeerConnection
+  #   POST /practice/sessions/{id}/signal  +  GET .../signals  → exchange SDP/ICE
+  #   POST /practice/sessions/{id}/end
+
+  /practice/profile:
+    get:
+      operationId: getPracticeProfile
+      tags: [practice]
+      summary: The student's own practice preferences, and the limits that apply
+      description: profile is null until the student has opted in once.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeProfileResponse"
+    put:
+      operationId: savePracticeProfile
+      tags: [practice]
+      summary: Opt in or out, and say what to practise
+      description: >
+        isAvailable is the opt-in to the whole feature; matching never considers
+        a student who has not set it. Tags are de-duplicated case-insensitively
+        and trimmed to the documented maximums server-side.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticePreferencesInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeProfileSaved"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /practice/queue:
+    post:
+      operationId: joinPracticeQueue
+      tags: [practice]
+      summary: Join the pool, taking a partner if one is already waiting
+      description: >
+        Matching happens on joining rather than on a timer, so the person who
+        arrives last has the freshest picture of who is waiting. An empty pool
+        is not an error: session comes back null with waiting=0.
+      responses:
+        "201":
+          description: Joined. session is set when a partner was found at once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeQueueResult"
+        "403":
+          description: Not opted in to voice practice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "409":
+          description: Already in a call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "429":
+          description: Today's call allowance is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+    delete:
+      operationId: leavePracticeQueue
+      tags: [practice]
+      summary: Leave the pool
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /practice/poll:
+    post:
+      operationId: pollPracticeStatus
+      tags: [practice]
+      summary: What is happening for this student right now
+      description: >
+        The one endpoint a client polls, while queued and while in a call. It is
+        a POST despite reading like a GET because it changes state on purpose:
+        it refreshes presence and closes anything overdue. A student who stops
+        polling drops out of matching by itself.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeStatus"
+        "409":
+          description: Conflicting call state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "429":
+          description: Today's call allowance is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/ice-servers:
+    get:
+      operationId: getPracticeIceServers
+      tags: [practice]
+      summary: What to hand RTCPeerConnection
+      description: >
+        Served rather than bundled so a TURN relay can be switched on with
+        environment variables, and so its credentials never sit in public
+        client code. With no TURN configured this is STUN only, and roughly one
+        connection in five will not establish — hasTurn says which case you are
+        in, so a client can say so plainly rather than sitting on "connecting…".
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeIceServers"
+
+  /practice/sessions/{sessionId}/accept:
+    post:
+      operationId: acceptPracticeSession
+      tags: [practice]
+      summary: Answer a ringing call
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSessionResponse"
+        "400":
+          description: Invalid session id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "403":
+          description: Not this student's call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "409":
+          description: The call has already finished, or was not answered in time
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/sessions/{sessionId}/end:
+    post:
+      operationId: endPracticeSession
+      tags: [practice]
+      summary: End a call, or decline one that is still ringing
+      description: >
+        Unilateral and immediate by design: someone who needs to get out of a
+        conversation is not made to confirm it first. The other side finds out
+        on its next poll.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeEndInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSessionResponse"
+        "400":
+          description: Invalid session id, or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "403":
+          description: Not this student's call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "409":
+          description: Conflicting call state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/sessions/{sessionId}/signal:
+    post:
+      operationId: sendPracticeSignal
+      tags: [practice]
+      summary: Hand one WebRTC setup message to the other side
+      description: >
+        The recipient is derived from the session, never taken from the request:
+        a student can only ever send into their own call, to the one other
+        person in it. SDP and ICE candidates are opaque to the server, which
+        only carries them.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeSignalInput"
+      responses:
+        "201":
+          description: Delivered to the other side's mailbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          description: Invalid session id, or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "403":
+          description: Not this student's call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+        "409":
+          description: Conflicting call state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/sessions/{sessionId}/signals:
+    get:
+      operationId: readPracticeSignals
+      tags: [practice]
+      summary: Read this side's signalling mailbox
+      description: >
+        `id` is the cursor: ask for everything after the highest id already
+        seen. Nothing needs deleting, and a client that misses a poll catches up
+        on the next one.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: number
+        - name: after
+          in: query
+          required: false
+          description: Return only signals with an id greater than this. Defaults to 0.
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSignalsResponse"
+        "400":
+          description: Invalid session id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "403":
+          description: Not this student's call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/blocks:
+    get:
+      operationId: listPracticeBlocks
+      tags: [practice]
+      summary: Who this student has blocked
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeBlocksResponse"
+
+  /practice/block:
+    post:
+      operationId: blockPracticePartner
+      tags: [practice]
+      summary: Block someone
+      description: >
+        A block works both ways round and is permanent unless the student
+        reverses it. No mirrored row is written, because that would tell the
+        blocked student something they are not owed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeBlockInput"
+      responses:
+        "201":
+          description: Blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "409":
+          description: Cannot block yourself
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/block/{userId}:
+    delete:
+      operationId: unblockPracticePartner
+      tags: [practice]
+      summary: Reverse a block
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The blocked student's user id, as returned by GET /practice/blocks.
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "400":
+          description: Invalid user id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /practice/report:
+    post:
+      operationId: reportPracticePartner
+      tags: [practice]
+      summary: Report someone to an administrator
+      description: >
+        Append-only, and nothing is acted on automatically — an account is not
+        suspended because two people reported it. Reporting also blocks by
+        default, since reporting someone almost always means not wanting to meet
+        them again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeReportInput"
+      responses:
+        "201":
+          description: Reported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeReportCreated"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "409":
+          description: Cannot report yourself
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodedError"
+
+  /practice/history:
+    get:
+      operationId: getPracticeHistory
+      tags: [practice]
+      summary: This student's recent calls
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeHistoryResponse"
+
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: |
+        Session cookie set by POST /auth/login and POST /auth/register, and
+        cleared by POST /auth/logout. There is no bearer token: the session
+        lives in Postgres and the cookie is the only credential. Native clients
+        must therefore persist cookies across requests.
+
   schemas:
 
     # ─── Languages & Curricula ─────────────────────────────────────────────────
@@ -2036,3 +3143,1107 @@ components:
           type: number
         passingScore:
           type: number
+
+    # ─── Shared error shapes ───────────────────────────────────────────────────
+
+    CodedError:
+      description: >
+        An error carrying a machine-readable `code` alongside the message. The
+        message is written for a person; branch on `code`.
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+    ValidationError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        details:
+          description: Field-level detail from the server's schema check. Shape varies.
+          type: ["array", "string", "null"]
+          items: {}
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    # ─── Media ─────────────────────────────────────────────────────────────────
+
+    MediaConfig:
+      type: object
+      required: [enabled, allowedAudioTypes, maxBytes, maxDurationSeconds]
+      properties:
+        enabled:
+          description: False when this deployment has no object storage configured.
+          type: boolean
+        allowedAudioTypes:
+          description: Content types accepted by POST /media/uploads.
+          type: array
+          items:
+            type: string
+        maxBytes:
+          type: number
+        maxDurationSeconds:
+          type: number
+
+    MediaUploadInput:
+      type: object
+      required: [purpose, contentType, sizeBytes]
+      properties:
+        purpose:
+          description: >
+            What the recording is for. A student may only upload for these two;
+            curriculum media is a separate staff endpoint.
+          type: string
+          enum: [lesson_activity, quiz_response]
+        contentType:
+          type: string
+          enum: [audio/webm, audio/ogg, audio/mp4, audio/mpeg, audio/wav, audio/x-wav]
+        sizeBytes:
+          description: What the client is about to upload. Re-measured on completion.
+          type: number
+        durationSec:
+          type: ["number", "null"]
+
+    PresignedUpload:
+      type: object
+      required: [url, headers, expiresInSeconds]
+      properties:
+        url:
+          description: PUT the bytes here directly. Does not go through the API server.
+          type: string
+        headers:
+          description: >
+            Headers the PUT MUST send, or the signature will not match. Send
+            them exactly as given.
+          type: object
+          additionalProperties:
+            type: string
+        expiresInSeconds:
+          type: number
+
+    MediaUploadTicket:
+      type: object
+      required: [mediaId, key, upload]
+      properties:
+        mediaId:
+          description: Pass this to .../complete, and then to whatever consumes the recording.
+          type: number
+        key:
+          description: The storage key. Generated server-side; never client-supplied.
+          type: string
+        upload:
+          $ref: "#/components/schemas/PresignedUpload"
+
+    MediaUploadResult:
+      type: object
+      required: [mediaId, status, mimeType]
+      properties:
+        mediaId:
+          type: number
+        status:
+          description: Only a "ready" asset may be attached to an attempt or a turn.
+          type: string
+          enum: [pending, ready, failed]
+        sizeBytes:
+          type: ["number", "null"]
+        durationSec:
+          type: ["number", "null"]
+        mimeType:
+          type: string
+
+    MediaPlaybackUrl:
+      type: object
+      required: [url]
+      properties:
+        url:
+          description: Short-lived presigned URL. Do not cache it.
+          type: string
+
+    # ─── Quizzes ───────────────────────────────────────────────────────────────
+
+    QuizListItem:
+      type: object
+      required: [id, title, titleAr, passingScore, xpReward, attemptsUsed, attemptsRemaining, bestScore, passed, activeAttemptId]
+      properties:
+        id:
+          type: number
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        levelId:
+          type: ["number", "null"]
+        timeLimitSec:
+          description: Null when the quiz is untimed.
+          type: ["number", "null"]
+        maxAttempts:
+          description: Null when retries are unlimited.
+          type: ["number", "null"]
+        passingScore:
+          type: number
+        xpReward:
+          type: number
+        attemptsUsed:
+          type: number
+        attemptsRemaining:
+          description: Null when retries are unlimited.
+          type: ["number", "null"]
+        bestScore:
+          description: Best graded score so far, 0-100. Null until something is graded.
+          type: ["number", "null"]
+        passed:
+          type: boolean
+        activeAttemptId:
+          description: An attempt still in progress, to resume rather than restart.
+          type: ["number", "null"]
+
+    QuizListResponse:
+      type: object
+      required: [quizzes]
+      properties:
+        quizzes:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizListItem"
+
+    QuizBlockConfig:
+      description: >
+        Block configuration with answer keys stripped. `explanation`,
+        `explanationAr` and `correctOptionIds` appear only once answers may be
+        revealed — an immediate-feedback quiz, or a submitted attempt.
+      type: object
+      required: [points]
+      properties:
+        points:
+          type: number
+        options:
+          type: array
+          items:
+            type: object
+            required: [id, text]
+            properties:
+              id:
+                type: string
+              text:
+                type: string
+              textAr:
+                type: ["string", "null"]
+        minWords:
+          type: number
+        mediaKey:
+          type: string
+        explanation:
+          type: string
+        explanationAr:
+          type: string
+        correctOptionIds:
+          type: array
+          items:
+            type: string
+
+    QuizBlock:
+      description: One block of a quiz, as the student is allowed to see it.
+      type: object
+      required: [id, type, order, isRequired, config]
+      properties:
+        id:
+          type: number
+        quizId:
+          type: ["number", "null"]
+        lessonId:
+          description: Always null for a quiz block — a block belongs to a lesson or a quiz, never both.
+          type: ["number", "null"]
+        type:
+          type: string
+        order:
+          type: number
+        title:
+          type: ["string", "null"]
+        titleAr:
+          type: ["string", "null"]
+        instructions:
+          type: ["string", "null"]
+        instructionsAr:
+          type: ["string", "null"]
+        content:
+          type: ["string", "null"]
+        contentAr:
+          type: ["string", "null"]
+        audioNote:
+          type: ["string", "null"]
+        prompt:
+          type: ["string", "null"]
+        promptAr:
+          type: ["string", "null"]
+        exampleAudio:
+          type: ["string", "null"]
+        referenceMediaId:
+          description: Reference recording, resolved via GET /media/{mediaId}/url.
+          type: ["number", "null"]
+        expectsReferenceReading:
+          description: True when the student reads a set passage, so pronunciation can be measured against it.
+          type: boolean
+        isRequired:
+          type: boolean
+        estimatedMinutes:
+          type: ["number", "null"]
+        isActive:
+          type: boolean
+        config:
+          $ref: "#/components/schemas/QuizBlockConfig"
+        createdAt:
+          type: ["string", "null"]
+        updatedAt:
+          type: ["string", "null"]
+
+    QuizDetail:
+      type: object
+      required: [id, title, titleAr, passingScore, contentVersion, blocks]
+      properties:
+        id:
+          type: number
+        title:
+          type: string
+        titleAr:
+          type: string
+        description:
+          type: ["string", "null"]
+        descriptionAr:
+          type: ["string", "null"]
+        instructions:
+          type: ["string", "null"]
+        instructionsAr:
+          type: ["string", "null"]
+        timeLimitSec:
+          type: ["number", "null"]
+        maxAttempts:
+          type: ["number", "null"]
+        passingScore:
+          type: number
+        contentVersion:
+          description: Which version of the quiz these blocks are. Recorded on the attempt.
+          type: number
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizBlock"
+
+    QuizAttempt:
+      type: object
+      required: [id, quizId, userId, contentVersion, status, pendingReviewCount, startedAt]
+      properties:
+        id:
+          type: number
+        quizId:
+          type: number
+        userId:
+          type: number
+        contentVersion:
+          type: number
+        status:
+          type: string
+          enum: [in_progress, submitted, grading, graded, abandoned]
+        score:
+          description: 0-100 over the blocks that have a verdict. Null until grading starts.
+          type: ["number", "null"]
+        passed:
+          description: Withheld (null) while any block is still awaiting a verdict.
+          type: ["boolean", "null"]
+        pendingReviewCount:
+          type: number
+        startedAt:
+          type: string
+        submittedAt:
+          type: ["string", "null"]
+        gradedAt:
+          type: ["string", "null"]
+
+    QuizAttemptStart:
+      allOf:
+        - $ref: "#/components/schemas/QuizAttempt"
+        - type: object
+          required: [resumed]
+          properties:
+            resumed:
+              description: True when this is the attempt already in progress rather than a new one.
+              type: boolean
+
+    QuizEvaluationBlocked:
+      description: >
+        Why a level evaluation cannot be started. `error` is the Arabic sentence
+        to show the student; `code` is what to branch on.
+      type: object
+      required: [error, eligibility]
+      properties:
+        error:
+          type: string
+        code:
+          type: ["string", "null"]
+        eligibility:
+          $ref: "#/components/schemas/EvaluationEligibility"
+
+    QuizResponseInput:
+      type: object
+      properties:
+        response:
+          description: >
+            The answer. Shape depends on the block type — selected option ids
+            for a multiple choice, text for writing. Omit for a purely spoken
+            answer.
+        mediaId:
+          description: >
+            A media_assets id from the upload handshake, for a spoken answer.
+            The server verifies it is ready and belongs to this student.
+          type: ["number", "null"]
+
+    QuizResponseSaved:
+      type: object
+      required: [id, blockId, saved]
+      properties:
+        id:
+          type: number
+        blockId:
+          type: number
+        saved:
+          type: boolean
+
+    QuizAttemptResult:
+      type: object
+      required: [id, status, score, passed, pendingReviewCount, passingScore]
+      properties:
+        id:
+          type: number
+        status:
+          type: string
+          enum: [in_progress, submitted, grading, graded, abandoned]
+        score:
+          description: 0-100 over the blocks graded so far, not over the whole quiz.
+          type: ["number", "null"]
+        passed:
+          description: Null while pendingReviewCount is above zero.
+          type: ["boolean", "null"]
+        pendingReviewCount:
+          type: number
+        passingScore:
+          type: number
+        promotion:
+          description: Present only for a level evaluation — whether this moved the student up.
+          oneOf:
+            - $ref: "#/components/schemas/PromotionOutcome"
+            - type: "null"
+        remediation:
+          description: Present only for a failed level evaluation — lessons to redo first.
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/RemediationLesson"
+
+    PromotionOutcome:
+      type: object
+      required: [promoted, fromLevelId, toLevelId, toLevelCode, toLevelName, toLevelNameAr, curriculumCompleted]
+      properties:
+        promoted:
+          type: boolean
+        fromLevelId:
+          type: ["number", "null"]
+        toLevelId:
+          type: ["number", "null"]
+        toLevelCode:
+          type: ["string", "null"]
+        toLevelName:
+          type: ["string", "null"]
+        toLevelNameAr:
+          type: ["string", "null"]
+        curriculumCompleted:
+          description: True when the student passed the final level of the curriculum.
+          type: boolean
+
+    QuizResponseView:
+      type: object
+      required: [response, mediaKey, score, gradedBy, feedback, feedbackAr]
+      properties:
+        response:
+          description: What the student answered. Shape depends on the block type.
+        mediaKey:
+          type: ["string", "null"]
+        score:
+          description: Null before the attempt is submitted, and while awaiting a verdict.
+          type: ["number", "null"]
+        gradedBy:
+          type: ["string", "null"]
+          enum: [auto, ai, teacher, pending, null]
+        feedback:
+          type: ["string", "null"]
+        feedbackAr:
+          description: Arabic is the student's language, so this is the one to show.
+          type: ["string", "null"]
+
+    QuizAttemptReviewBlock:
+      allOf:
+        - $ref: "#/components/schemas/QuizBlock"
+        - type: object
+          required: [response]
+          properties:
+            response:
+              oneOf:
+                - $ref: "#/components/schemas/QuizResponseView"
+                - type: "null"
+
+    QuizAttemptReview:
+      type: object
+      required: [attempt, quiz, blocks]
+      properties:
+        attempt:
+          type: object
+          required: [id, quizId, status, score, passed, pendingReviewCount, startedAt, submittedAt]
+          properties:
+            id:
+              type: number
+            quizId:
+              type: number
+            status:
+              type: string
+              enum: [in_progress, submitted, grading, graded, abandoned]
+            score:
+              type: ["number", "null"]
+            passed:
+              type: ["boolean", "null"]
+            pendingReviewCount:
+              type: number
+            startedAt:
+              type: string
+            submittedAt:
+              type: ["string", "null"]
+        quiz:
+          type: ["object", "null"]
+          required: [id, title, titleAr, passingScore]
+          properties:
+            id:
+              type: number
+            title:
+              type: string
+            titleAr:
+              type: string
+            passingScore:
+              type: number
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuizAttemptReviewBlock"
+
+    # ─── Lesson activity attempts ──────────────────────────────────────────────
+
+    SpeechMetricsSummary:
+      description: >
+        The headline fluency numbers. The full word-by-word alignment is large
+        and only useful to a teacher, so it is not returned here.
+      type: object
+      properties:
+        speechRate:
+          description: Words per minute.
+          type: ["number", "null"]
+        pauseCount:
+          type: ["number", "null"]
+        meanLengthOfRun:
+          description: Average words spoken between pauses.
+          type: ["number", "null"]
+        fillersPer100Words:
+          type: ["number", "null"]
+        problemWords:
+          description: Words to practise, from the pronunciation alignment.
+          type: ["array", "null"]
+          items:
+            type: string
+        fluencyUnavailable:
+          description: True when fluency could not be measured from this recording.
+          type: ["boolean", "null"]
+
+    LessonActivityAttemptStatus:
+      type: object
+      required: [attemptId, blockId, evaluationStatus]
+      properties:
+        attemptId:
+          type: number
+        blockId:
+          type: number
+        evaluationStatus:
+          description: Keep polling while this is "pending".
+          type: string
+          enum: [graded, pending, skipped]
+        correct:
+          type: ["boolean", "null"]
+        score:
+          type: ["number", "null"]
+        feedback:
+          type: ["string", "null"]
+        feedbackAr:
+          description: Arabic feedback — what the student is shown.
+          type: ["string", "null"]
+        transcript:
+          description: What the recogniser heard, for a spoken answer.
+          type: ["string", "null"]
+        pronunciationScore:
+          type: ["number", "null"]
+        fluencyScore:
+          type: ["number", "null"]
+        speechMetrics:
+          oneOf:
+            - $ref: "#/components/schemas/SpeechMetricsSummary"
+            - type: "null"
+
+    # ─── Skills ────────────────────────────────────────────────────────────────
+
+    SkillSummary:
+      type: object
+      required: [skill, score, sampleCount, confidence, trend, lastObservedAt]
+      properties:
+        skill:
+          type: string
+          enum: [pronunciation, fluency, vocabulary, grammar, comprehension, writing, speaking]
+        score:
+          description: 0-100, recency-weighted. Null when there is no evidence at all.
+          type: ["number", "null"]
+        sampleCount:
+          type: number
+        confidence:
+          description: Treat "none" and "low" as "not enough evidence to tell the student anything".
+          type: string
+          enum: [none, low, medium, high]
+        trend:
+          type: string
+          enum: [improving, steady, declining, unknown]
+        lastObservedAt:
+          type: ["string", "null"]
+
+    SkillProfile:
+      type: object
+      required: [skills, strengths, weaknesses, totalEvidence]
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillSummary"
+        strengths:
+          description: Skills the student is reliably good at. Never low-confidence.
+          type: array
+          items:
+            type: string
+            enum: [pronunciation, fluency, vocabulary, grammar, comprehension, writing, speaking]
+        weaknesses:
+          description: Skills needing work, weakest first. Never low-confidence.
+          type: array
+          items:
+            type: string
+            enum: [pronunciation, fluency, vocabulary, grammar, comprehension, writing, speaking]
+        totalEvidence:
+          type: number
+
+    SkillRecommendation:
+      type: object
+      required: [kind, skill, lessonId, lessonTitle, lessonTitleAr, reasonAr]
+      properties:
+        kind:
+          type: string
+          enum: [reread_lesson, repeat_pronunciation, practise_words, redo_lesson]
+        skill:
+          type: string
+          enum: [pronunciation, fluency, vocabulary, grammar, comprehension, writing, speaking]
+        lessonId:
+          description: Always an existing lesson. Null only for a word-practice item.
+          type: ["number", "null"]
+        lessonTitle:
+          type: ["string", "null"]
+        lessonTitleAr:
+          type: ["string", "null"]
+        words:
+          description: Specific words the student got wrong, for pronunciation practice.
+          type: array
+          items:
+            type: string
+        reasonAr:
+          description: Why it is being suggested, in Arabic.
+          type: string
+
+    SkillReport:
+      type: object
+      required: [profile, focus, recommendations, advice, insufficientEvidence]
+      properties:
+        profile:
+          $ref: "#/components/schemas/SkillProfile"
+        focus:
+          description: The one skill to work on next. Null when there is too little history.
+          type: ["string", "null"]
+          enum: [pronunciation, fluency, vocabulary, grammar, comprehension, writing, speaking, null]
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillRecommendation"
+        advice:
+          description: Arabic advice sentence. Null unless advice=true was asked for and the AI task is available.
+          type: ["string", "null"]
+        insufficientEvidence:
+          description: >
+            True when there is too little history to say anything useful. Show
+            nothing rather than manufacturing a weakness from three answers.
+          type: boolean
+
+    # ─── AI conversation tutor ─────────────────────────────────────────────────
+
+    ConversationStartInput:
+      type: object
+      required: [lessonId]
+      properties:
+        lessonId:
+          type: number
+        blockId:
+          description: The conversation block to take the prompt and caps from.
+          type: ["number", "null"]
+
+    ConversationStart:
+      type: object
+      required: [sessionId, greeting, maxTurns, maxMinutes, targetVocabulary]
+      properties:
+        sessionId:
+          type: number
+        greeting:
+          description: The tutor's opening line. Show it as the first message.
+          type: string
+        maxTurns:
+          type: number
+        maxMinutes:
+          type: number
+        targetVocabulary:
+          description: Words from the lesson the student is being nudged to use.
+          type: array
+          items:
+            type: string
+
+    ConversationTurnInput:
+      description: Send exactly one of `message` or `mediaId`.
+      type: object
+      properties:
+        message:
+          description: What the student typed.
+          type: string
+          minLength: 1
+          maxLength: 2000
+        mediaId:
+          description: >
+            A ready media_assets id, when the student spoke instead. The server
+            transcribes it and answers what was actually said.
+          type: number
+
+    ConversationTurn:
+      type: object
+      required: [reply, transcript, turnsUsed, turnsRemaining, minutesRemaining, vocabularyUsed, ended]
+      properties:
+        reply:
+          type: string
+        transcript:
+          description: What the recogniser heard, when the turn was spoken. Null for a typed turn.
+          type: ["string", "null"]
+        turnsUsed:
+          type: number
+        turnsRemaining:
+          type: number
+        minutesRemaining:
+          type: number
+        vocabularyUsed:
+          description: Target words the student has used so far.
+          type: array
+          items:
+            type: string
+        ended:
+          description: True when this turn hit a cap and the session is now closed.
+          type: boolean
+
+    ConversationMessage:
+      type: object
+      required: [role, content, createdAt]
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+
+    ActiveConversation:
+      type: object
+      required: [sessionId, lessonId, turns, turnsUsed, turnsRemaining, minutesRemaining, vocabularyUsed]
+      properties:
+        sessionId:
+          type: number
+        lessonId:
+          type: ["number", "null"]
+        turns:
+          description: The exchange so far, oldest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
+        turnsUsed:
+          type: number
+        turnsRemaining:
+          type: number
+        minutesRemaining:
+          type: number
+        vocabularyUsed:
+          type: array
+          items:
+            type: string
+
+    ActiveConversationResponse:
+      type: object
+      required: [session]
+      properties:
+        session:
+          oneOf:
+            - $ref: "#/components/schemas/ActiveConversation"
+            - type: "null"
+
+    ConversationEnded:
+      type: object
+      required: [ended]
+      properties:
+        ended:
+          type: boolean
+
+    # ─── Student-to-student voice practice ─────────────────────────────────────
+
+    PracticePreferences:
+      type: object
+      required: [isAvailable, goals, interests, professionalField, availableHours]
+      properties:
+        isAvailable:
+          description: The opt-in to the feature. Matching never considers a student without it.
+          type: boolean
+        goals:
+          type: array
+          items:
+            type: string
+        interests:
+          type: array
+          items:
+            type: string
+        professionalField:
+          type: ["string", "null"]
+        availableHours:
+          description: Hours of the day in UTC (0-23) the student is likely to be around.
+          type: array
+          items:
+            type: number
+
+    PracticePreferencesInput:
+      type: object
+      required: [isAvailable]
+      properties:
+        isAvailable:
+          type: boolean
+        goals:
+          description: At most 10 tags, each at most 40 characters. Defaults to empty.
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            maxLength: 40
+        interests:
+          description: At most 10 tags, each at most 40 characters. Defaults to empty.
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            maxLength: 40
+        professionalField:
+          type: ["string", "null"]
+          maxLength: 40
+        availableHours:
+          type: array
+          maxItems: 24
+          items:
+            type: number
+            minimum: 0
+            maximum: 23
+
+    PracticeLimits:
+      type: object
+      required: [dailyCallLimit, maxCallMinutes, ringTimeoutMs, connectTimeoutMs]
+      properties:
+        dailyCallLimit:
+          type: number
+        maxCallMinutes:
+          description: The server ends a call at this length.
+          type: number
+        ringTimeoutMs:
+          description: How long a proposed call rings before it counts as unanswered.
+          type: number
+        connectTimeoutMs:
+          type: number
+
+    PracticeProfileResponse:
+      type: object
+      required: [profile, limits]
+      properties:
+        profile:
+          description: Null until the student has opted in once.
+          oneOf:
+            - $ref: "#/components/schemas/PracticePreferences"
+            - type: "null"
+        limits:
+          $ref: "#/components/schemas/PracticeLimits"
+
+    PracticeProfileSaved:
+      type: object
+      required: [profile]
+      properties:
+        profile:
+          $ref: "#/components/schemas/PracticePreferences"
+
+    PracticePartner:
+      type: object
+      required: [userId, name, levelCode, interests, professionalField]
+      properties:
+        userId:
+          type: number
+        name:
+          type: string
+        levelCode:
+          type: ["string", "null"]
+        interests:
+          type: array
+          items:
+            type: string
+        professionalField:
+          type: ["string", "null"]
+
+    PracticeSessionView:
+      type: object
+      required: [sessionId, status, isCaller, partner, matchScore, startedAt, secondsRemaining, endReason]
+      properties:
+        sessionId:
+          type: number
+        status:
+          type: string
+          enum: [waiting, active, ended, declined]
+        isCaller:
+          description: True when this student's side makes the WebRTC offer.
+          type: boolean
+        partner:
+          $ref: "#/components/schemas/PracticePartner"
+        matchScore:
+          description: What the matcher scored this pair, kept so a bad match can be explained.
+          type: ["number", "null"]
+        startedAt:
+          description: Set when the partner accepts, not when the pair is proposed.
+          type: ["string", "null"]
+        secondsRemaining:
+          description: Seconds left before the server ends the call.
+          type: ["number", "null"]
+        endReason:
+          type: ["string", "null"]
+          enum: [ended_by_user, blocked, timeout, not_answered, connection_failed, declined, null]
+
+    PracticeSessionResponse:
+      type: object
+      required: [session]
+      properties:
+        session:
+          $ref: "#/components/schemas/PracticeSessionView"
+
+    PracticeQueueResult:
+      type: object
+      required: [session, waiting]
+      properties:
+        session:
+          description: The pairing, when one was found straight away.
+          oneOf:
+            - $ref: "#/components/schemas/PracticeSessionView"
+            - type: "null"
+        waiting:
+          description: How many other students are waiting, so an empty pool looks empty.
+          type: number
+
+    PracticeStatus:
+      type: object
+      required: [session, queued, waiting, secondsWaiting]
+      properties:
+        session:
+          oneOf:
+            - $ref: "#/components/schemas/PracticeSessionView"
+            - type: "null"
+        queued:
+          description: True while this student is in the pool waiting for someone.
+          type: boolean
+        waiting:
+          type: number
+        secondsWaiting:
+          type: number
+
+    PracticeEndInput:
+      type: object
+      properties:
+        reason:
+          description: Defaults to ended_by_user. A still-ringing call ended this way is recorded as declined.
+          type: string
+          enum: [ended_by_user, declined, connection_failed]
+
+    PracticeIceServer:
+      type: object
+      required: [urls]
+      properties:
+        urls:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        username:
+          type: string
+        credential:
+          type: string
+
+    PracticeIceServers:
+      type: object
+      required: [iceServers, hasTurn, connectTimeoutMs]
+      properties:
+        iceServers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeIceServer"
+        hasTurn:
+          description: >
+            False means STUN only, and roughly one connection in five will not
+            establish. Say so rather than sitting on "connecting…".
+          type: boolean
+        connectTimeoutMs:
+          type: number
+
+    PracticeSignalInput:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [offer, answer, ice, bye]
+        payload:
+          description: The SDP or ICE candidate. Opaque to the server, which only carries it.
+
+    PracticeSignal:
+      type: object
+      required: [id, kind, payload, createdAt]
+      properties:
+        id:
+          description: The cursor. Pass the highest id seen as `after` on the next read.
+          type: number
+        kind:
+          type: string
+          enum: [offer, answer, ice, bye]
+        payload:
+          description: The SDP or ICE candidate, as the other side sent it.
+        createdAt:
+          type: string
+
+    PracticeSignalsResponse:
+      type: object
+      required: [signals]
+      properties:
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeSignal"
+
+    PracticeBlockInput:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          description: The student to block.
+          type: number
+        sessionId:
+          description: The call it happened in, for an administrator reading a report.
+          type: ["number", "null"]
+
+    PracticeBlockEntry:
+      type: object
+      required: [userId, name, createdAt]
+      properties:
+        userId:
+          type: number
+        name:
+          type: string
+        createdAt:
+          type: string
+
+    PracticeBlocksResponse:
+      type: object
+      required: [blocks]
+      properties:
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeBlockEntry"
+
+    PracticeReportInput:
+      type: object
+      required: [userId, reason]
+      properties:
+        userId:
+          description: The student being reported.
+          type: number
+        sessionId:
+          type: ["number", "null"]
+        reason:
+          type: string
+          enum: [harassment, inappropriate, spam, language, other]
+        detail:
+          type: ["string", "null"]
+          maxLength: 2000
+        alsoBlock:
+          description: Defaults to true — reporting someone almost always means not wanting to meet them again.
+          type: boolean
+
+    PracticeReportCreated:
+      type: object
+      required: [reportId]
+      properties:
+        reportId:
+          type: number
+
+    PracticeCall:
+      type: object
+      required: [sessionId, partnerId, partnerName, startedAt, durationSeconds, endReason]
+      properties:
+        sessionId:
+          type: number
+        partnerId:
+          type: number
+        partnerName:
+          type: string
+        startedAt:
+          description: Null when the call was never answered.
+          type: ["string", "null"]
+        durationSeconds:
+          type: ["number", "null"]
+        endReason:
+          type: ["string", "null"]
+
+    PracticeHistoryResponse:
+      type: object
+      required: [calls]
+      properties:
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeCall"

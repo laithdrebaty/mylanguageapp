@@ -20,12 +20,19 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ActiveConversationResponse,
   AdminLesson,
   AdminLessonInput,
   AdminLessonUpdate,
   AdminStats,
   AdminStudentList,
   AuthResult,
+  CodedError,
+  ConversationEnded,
+  ConversationStart,
+  ConversationStartInput,
+  ConversationTurn,
+  ConversationTurnInput,
   Curriculum,
   DashboardStats,
   ErrorResponse,
@@ -33,9 +40,11 @@ import type {
   ExerciseSubmission,
   GetAdminStudentsParams,
   GetLessonsParams,
+  GetSkillReportParams,
   GetVocabularyParams,
   HealthStatus,
   Language,
+  LessonActivityAttemptStatus,
   LessonActivityResult,
   LessonActivitySubmission,
   LessonCompletionError,
@@ -47,18 +56,50 @@ import type {
   LevelEvaluationResponse,
   LevelsResponse,
   LoginInput,
+  MediaConfig,
+  MediaPlaybackUrl,
+  MediaUploadInput,
+  MediaUploadResult,
+  MediaUploadTicket,
+  OkResponse,
   PlacementTest,
   PlacementTestResult,
   PlacementTestSubmission,
+  PracticeBlockInput,
+  PracticeBlocksResponse,
+  PracticeEndInput,
+  PracticeHistoryResponse,
+  PracticeIceServers,
+  PracticePreferencesInput,
+  PracticeProfileResponse,
+  PracticeProfileSaved,
+  PracticeQueueResult,
+  PracticeReportCreated,
+  PracticeReportInput,
+  PracticeSessionResponse,
+  PracticeSignalInput,
+  PracticeSignalsResponse,
+  PracticeStatus,
   ProfileUpdate,
   ProgressionHistoryResponse,
+  QuizAttemptResult,
+  QuizAttemptReview,
+  QuizAttemptStart,
+  QuizDetail,
+  QuizEvaluationBlocked,
+  QuizListResponse,
+  QuizResponseInput,
+  QuizResponseSaved,
+  ReadPracticeSignalsParams,
   RegisterInput,
+  SkillReport,
   StudentProfile,
   StudentSubscription,
   SubscriptionInput,
   SubscriptionPlan,
   SuccessResponse,
   User,
+  ValidationError,
   VocabularyItem,
   WeakAreaSummary
 } from './api.schemas';
@@ -2654,6 +2695,2338 @@ export function useGetCurricula<TData = Awaited<ReturnType<typeof getCurricula>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCurriculaQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMediaConfigUrl = () => {
+
+
+
+
+  return `/api/media/config`
+}
+
+/**
+ * Read this before showing a record button. A deployment without object storage configured answers enabled=false, and every upload call would otherwise fail with 503 only after the student had finished speaking.
+ * @summary What this deployment accepts for recordings
+ */
+export const getMediaConfig = async ( options?: Parameters<typeof customFetch>[1]): Promise<MediaConfig> => {
+
+  return customFetch<MediaConfig>(getGetMediaConfigUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMediaConfigQueryKey = () => {
+    return [
+    `/api/media/config`
+    ] as const;
+    }
+
+
+export const getGetMediaConfigQueryOptions = <TData = Awaited<ReturnType<typeof getMediaConfig>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMediaConfigQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMediaConfig>>> = ({ signal }) => getMediaConfig({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMediaConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMediaConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getMediaConfig>>>
+export type GetMediaConfigQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary What this deployment accepts for recordings
+ */
+
+export function useGetMediaConfig<TData = Awaited<ReturnType<typeof getMediaConfig>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMediaConfigQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getBeginMediaUploadUrl = () => {
+
+
+
+
+  return `/api/media/uploads`
+}
+
+/**
+ * @summary Step 1 — reserve a key and get a presigned PUT
+ */
+export const beginMediaUpload = async (mediaUploadInput: MediaUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<MediaUploadTicket> => {
+
+  return customFetch<MediaUploadTicket>(getBeginMediaUploadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mediaUploadInput)
+  }
+);}
+
+
+
+
+
+export const getBeginMediaUploadMutationOptions = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof beginMediaUpload>>, TError,{data: BodyType<MediaUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof beginMediaUpload>>, TError,{data: BodyType<MediaUploadInput>}, TContext> => {
+
+const mutationKey = ['beginMediaUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof beginMediaUpload>>, {data: BodyType<MediaUploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  beginMediaUpload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BeginMediaUploadMutationResult = NonNullable<Awaited<ReturnType<typeof beginMediaUpload>>>
+    export type BeginMediaUploadMutationBody = BodyType<MediaUploadInput>
+    export type BeginMediaUploadMutationError = ErrorType<CodedError>
+
+    /**
+ * @summary Step 1 — reserve a key and get a presigned PUT
+ */
+export const useBeginMediaUpload = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof beginMediaUpload>>, TError,{data: BodyType<MediaUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof beginMediaUpload>>,
+        TError,
+        {data: BodyType<MediaUploadInput>},
+        TContext
+      > => {
+      return useMutation(getBeginMediaUploadMutationOptions(options));
+    }
+
+export const getCompleteMediaUploadUrl = (mediaId: number,) => {
+
+
+
+
+  return `/api/media/uploads/${mediaId}/complete`
+}
+
+/**
+ * The size and type declared in step 1 were a claim; this is the measurement. An object that overruns the limit is deleted and the asset marked failed, so a client cannot understate its size to get past the cap.
+ * @summary Step 3 — confirm the bytes landed in the bucket
+ */
+export const completeMediaUpload = async (mediaId: number, options?: Parameters<typeof customFetch>[1]): Promise<MediaUploadResult> => {
+
+  return customFetch<MediaUploadResult>(getCompleteMediaUploadUrl(mediaId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCompleteMediaUploadMutationOptions = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeMediaUpload>>, TError,{mediaId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeMediaUpload>>, TError,{mediaId: number}, TContext> => {
+
+const mutationKey = ['completeMediaUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeMediaUpload>>, {mediaId: number}> = (props) => {
+          const {mediaId} = props ?? {};
+
+          return  completeMediaUpload(mediaId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteMediaUploadMutationResult = NonNullable<Awaited<ReturnType<typeof completeMediaUpload>>>
+
+    export type CompleteMediaUploadMutationError = ErrorType<CodedError>
+
+    /**
+ * @summary Step 3 — confirm the bytes landed in the bucket
+ */
+export const useCompleteMediaUpload = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeMediaUpload>>, TError,{mediaId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeMediaUpload>>,
+        TError,
+        {mediaId: number},
+        TContext
+      > => {
+      return useMutation(getCompleteMediaUploadMutationOptions(options));
+    }
+
+export const getGetMediaPlaybackUrlUrl = (mediaId: number,) => {
+
+
+
+
+  return `/api/media/${mediaId}/url`
+}
+
+/**
+ * Missing, unfinished and not-yours all answer 404 alike, so iterating ids cannot be used to learn which recordings exist.
+ * @summary A short-lived playback URL for a recording
+ */
+export const getMediaPlaybackUrl = async (mediaId: number, options?: Parameters<typeof customFetch>[1]): Promise<MediaPlaybackUrl> => {
+
+  return customFetch<MediaPlaybackUrl>(getGetMediaPlaybackUrlUrl(mediaId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMediaPlaybackUrlQueryKey = (mediaId: number,) => {
+    return [
+    `/api/media/${mediaId}/url`
+    ] as const;
+    }
+
+
+export const getGetMediaPlaybackUrlQueryOptions = <TData = Awaited<ReturnType<typeof getMediaPlaybackUrl>>, TError = ErrorType<ErrorResponse | CodedError>>(mediaId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaPlaybackUrl>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMediaPlaybackUrlQueryKey(mediaId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMediaPlaybackUrl>>> = ({ signal }) => getMediaPlaybackUrl(mediaId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: mediaId !== null && mediaId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMediaPlaybackUrl>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMediaPlaybackUrlQueryResult = NonNullable<Awaited<ReturnType<typeof getMediaPlaybackUrl>>>
+export type GetMediaPlaybackUrlQueryError = ErrorType<ErrorResponse | CodedError>
+
+
+/**
+ * @summary A short-lived playback URL for a recording
+ */
+
+export function useGetMediaPlaybackUrl<TData = Awaited<ReturnType<typeof getMediaPlaybackUrl>>, TError = ErrorType<ErrorResponse | CodedError>>(
+ mediaId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaPlaybackUrl>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMediaPlaybackUrlQueryOptions(mediaId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetQuizzesUrl = () => {
+
+
+
+
+  return `/api/quizzes`
+}
+
+/**
+ * @summary Published quizzes, with this student's best result so far
+ */
+export const getQuizzes = async ( options?: Parameters<typeof customFetch>[1]): Promise<QuizListResponse> => {
+
+  return customFetch<QuizListResponse>(getGetQuizzesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetQuizzesQueryKey = () => {
+    return [
+    `/api/quizzes`
+    ] as const;
+    }
+
+
+export const getGetQuizzesQueryOptions = <TData = Awaited<ReturnType<typeof getQuizzes>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuizzes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetQuizzesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getQuizzes>>> = ({ signal }) => getQuizzes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQuizzes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetQuizzesQueryResult = NonNullable<Awaited<ReturnType<typeof getQuizzes>>>
+export type GetQuizzesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Published quizzes, with this student's best result so far
+ */
+
+export function useGetQuizzes<TData = Awaited<ReturnType<typeof getQuizzes>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuizzes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetQuizzesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetQuizUrl = (quizId: number,) => {
+
+
+
+
+  return `/api/quizzes/${quizId}`
+}
+
+/**
+ * Blocks arrive in a deterministic order — for a shuffling quiz the order is seeded from the quiz and the student, so a reload does not reorder them mid-attempt.
+ * @summary Quiz metadata and its blocks, with answer keys stripped
+ */
+export const getQuiz = async (quizId: number, options?: Parameters<typeof customFetch>[1]): Promise<QuizDetail> => {
+
+  return customFetch<QuizDetail>(getGetQuizUrl(quizId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetQuizQueryKey = (quizId: number,) => {
+    return [
+    `/api/quizzes/${quizId}`
+    ] as const;
+    }
+
+
+export const getGetQuizQueryOptions = <TData = Awaited<ReturnType<typeof getQuiz>>, TError = ErrorType<ErrorResponse>>(quizId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuiz>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetQuizQueryKey(quizId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getQuiz>>> = ({ signal }) => getQuiz(quizId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: quizId !== null && quizId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQuiz>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetQuizQueryResult = NonNullable<Awaited<ReturnType<typeof getQuiz>>>
+export type GetQuizQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Quiz metadata and its blocks, with answer keys stripped
+ */
+
+export function useGetQuiz<TData = Awaited<ReturnType<typeof getQuiz>>, TError = ErrorType<ErrorResponse>>(
+ quizId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuiz>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetQuizQueryOptions(quizId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartQuizAttemptUrl = (quizId: number,) => {
+
+
+
+
+  return `/api/quizzes/${quizId}/attempts`
+}
+
+/**
+ * Resuming is not a new attempt and does not consume the allowance — an attempt already in progress comes back with resumed=true and a 200, while a genuinely new one answers 201.
+ * @summary Start an attempt, or resume the one already in progress
+ */
+export const startQuizAttempt = async (quizId: number, options?: Parameters<typeof customFetch>[1]): Promise<QuizAttemptStart> => {
+
+  return customFetch<QuizAttemptStart>(getStartQuizAttemptUrl(quizId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getStartQuizAttemptMutationOptions = <TError = ErrorType<ErrorResponse | QuizEvaluationBlocked | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startQuizAttempt>>, TError,{quizId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startQuizAttempt>>, TError,{quizId: number}, TContext> => {
+
+const mutationKey = ['startQuizAttempt'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startQuizAttempt>>, {quizId: number}> = (props) => {
+          const {quizId} = props ?? {};
+
+          return  startQuizAttempt(quizId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartQuizAttemptMutationResult = NonNullable<Awaited<ReturnType<typeof startQuizAttempt>>>
+
+    export type StartQuizAttemptMutationError = ErrorType<ErrorResponse | QuizEvaluationBlocked | CodedError>
+
+    /**
+ * @summary Start an attempt, or resume the one already in progress
+ */
+export const useStartQuizAttempt = <TError = ErrorType<ErrorResponse | QuizEvaluationBlocked | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startQuizAttempt>>, TError,{quizId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startQuizAttempt>>,
+        TError,
+        {quizId: number},
+        TContext
+      > => {
+      return useMutation(getStartQuizAttemptMutationOptions(options));
+    }
+
+export const getGetQuizAttemptUrl = (attemptId: number,) => {
+
+
+
+
+  return `/api/quiz-attempts/${attemptId}`
+}
+
+/**
+ * Answer keys, per-block scores and feedback appear only once the attempt has been submitted; before that they are withheld, because revealing them mid-attempt would give the answers away.
+ * @summary Review an attempt
+ */
+export const getQuizAttempt = async (attemptId: number, options?: Parameters<typeof customFetch>[1]): Promise<QuizAttemptReview> => {
+
+  return customFetch<QuizAttemptReview>(getGetQuizAttemptUrl(attemptId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetQuizAttemptQueryKey = (attemptId: number,) => {
+    return [
+    `/api/quiz-attempts/${attemptId}`
+    ] as const;
+    }
+
+
+export const getGetQuizAttemptQueryOptions = <TData = Awaited<ReturnType<typeof getQuizAttempt>>, TError = ErrorType<ErrorResponse>>(attemptId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuizAttempt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetQuizAttemptQueryKey(attemptId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getQuizAttempt>>> = ({ signal }) => getQuizAttempt(attemptId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: attemptId !== null && attemptId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQuizAttempt>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetQuizAttemptQueryResult = NonNullable<Awaited<ReturnType<typeof getQuizAttempt>>>
+export type GetQuizAttemptQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Review an attempt
+ */
+
+export function useGetQuizAttempt<TData = Awaited<ReturnType<typeof getQuizAttempt>>, TError = ErrorType<ErrorResponse>>(
+ attemptId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuizAttempt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetQuizAttemptQueryOptions(attemptId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveQuizResponseUrl = (attemptId: number,
+    blockId: number,) => {
+
+
+
+
+  return `/api/quiz-attempts/${attemptId}/responses/${blockId}`
+}
+
+/**
+ * An upsert — re-answering a block replaces the previous response. A mediaId is accepted only after the upload handshake has completed and the recording is confirmed to belong to this student; the stored key is derived from the verified asset, never from the request.
+ * @summary Save (or overwrite) the answer to one block
+ */
+export const saveQuizResponse = async (attemptId: number,
+    blockId: number,
+    quizResponseInput: QuizResponseInput, options?: Parameters<typeof customFetch>[1]): Promise<QuizResponseSaved> => {
+
+  return customFetch<QuizResponseSaved>(getSaveQuizResponseUrl(attemptId,blockId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(quizResponseInput)
+  }
+);}
+
+
+
+
+
+export const getSaveQuizResponseMutationOptions = <TError = ErrorType<CodedError | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveQuizResponse>>, TError,{attemptId: number;blockId: number;data: BodyType<QuizResponseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveQuizResponse>>, TError,{attemptId: number;blockId: number;data: BodyType<QuizResponseInput>}, TContext> => {
+
+const mutationKey = ['saveQuizResponse'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveQuizResponse>>, {attemptId: number;blockId: number;data: BodyType<QuizResponseInput>}> = (props) => {
+          const {attemptId,blockId,data} = props ?? {};
+
+          return  saveQuizResponse(attemptId,blockId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveQuizResponseMutationResult = NonNullable<Awaited<ReturnType<typeof saveQuizResponse>>>
+    export type SaveQuizResponseMutationBody = BodyType<QuizResponseInput>
+    export type SaveQuizResponseMutationError = ErrorType<CodedError | ErrorResponse>
+
+    /**
+ * @summary Save (or overwrite) the answer to one block
+ */
+export const useSaveQuizResponse = <TError = ErrorType<CodedError | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveQuizResponse>>, TError,{attemptId: number;blockId: number;data: BodyType<QuizResponseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveQuizResponse>>,
+        TError,
+        {attemptId: number;blockId: number;data: BodyType<QuizResponseInput>},
+        TContext
+      > => {
+      return useMutation(getSaveQuizResponseMutationOptions(options));
+    }
+
+export const getSubmitQuizAttemptUrl = (attemptId: number,) => {
+
+
+
+
+  return `/api/quiz-attempts/${attemptId}/submit`
+}
+
+/**
+ * Objective blocks are scored immediately. Blocks needing an AI or a teacher are left pending and graded in the background, so the score returned here is over what could be graded so far and pass/fail is withheld (passed=null) until every block has a verdict. Poll GET /quiz-attempts/{attemptId} while pendingReviewCount is above zero.
+ * @summary Submit an attempt for grading
+ */
+export const submitQuizAttempt = async (attemptId: number, options?: Parameters<typeof customFetch>[1]): Promise<QuizAttemptResult> => {
+
+  return customFetch<QuizAttemptResult>(getSubmitQuizAttemptUrl(attemptId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getSubmitQuizAttemptMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitQuizAttempt>>, TError,{attemptId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitQuizAttempt>>, TError,{attemptId: number}, TContext> => {
+
+const mutationKey = ['submitQuizAttempt'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitQuizAttempt>>, {attemptId: number}> = (props) => {
+          const {attemptId} = props ?? {};
+
+          return  submitQuizAttempt(attemptId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitQuizAttemptMutationResult = NonNullable<Awaited<ReturnType<typeof submitQuizAttempt>>>
+
+    export type SubmitQuizAttemptMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Submit an attempt for grading
+ */
+export const useSubmitQuizAttempt = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitQuizAttempt>>, TError,{attemptId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitQuizAttempt>>,
+        TError,
+        {attemptId: number},
+        TContext
+      > => {
+      return useMutation(getSubmitQuizAttemptMutationOptions(options));
+    }
+
+export const getGetLessonActivityAttemptUrl = (lessonId: number,
+    attemptId: number,) => {
+
+
+
+
+  return `/api/lessons/${lessonId}/attempts/${attemptId}`
+}
+
+/**
+ * A spoken answer is assessed in the background, so the submit response can only say "pending". This is how a client finds out what it came to without reloading the lesson — poll it a few times after recording, until evaluationStatus is no longer "pending".
+ * @summary The current verdict on one activity attempt
+ */
+export const getLessonActivityAttempt = async (lessonId: number,
+    attemptId: number, options?: Parameters<typeof customFetch>[1]): Promise<LessonActivityAttemptStatus> => {
+
+  return customFetch<LessonActivityAttemptStatus>(getGetLessonActivityAttemptUrl(lessonId,attemptId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLessonActivityAttemptQueryKey = (lessonId: number,
+    attemptId: number,) => {
+    return [
+    `/api/lessons/${lessonId}/attempts/${attemptId}`
+    ] as const;
+    }
+
+
+export const getGetLessonActivityAttemptQueryOptions = <TData = Awaited<ReturnType<typeof getLessonActivityAttempt>>, TError = ErrorType<ErrorResponse>>(lessonId: number,
+    attemptId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLessonActivityAttempt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLessonActivityAttemptQueryKey(lessonId,attemptId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLessonActivityAttempt>>> = ({ signal }) => getLessonActivityAttempt(lessonId,attemptId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: lessonId !== null && lessonId !== undefined && attemptId !== null && attemptId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLessonActivityAttempt>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLessonActivityAttemptQueryResult = NonNullable<Awaited<ReturnType<typeof getLessonActivityAttempt>>>
+export type GetLessonActivityAttemptQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary The current verdict on one activity attempt
+ */
+
+export function useGetLessonActivityAttempt<TData = Awaited<ReturnType<typeof getLessonActivityAttempt>>, TError = ErrorType<ErrorResponse>>(
+ lessonId: number,
+    attemptId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLessonActivityAttempt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLessonActivityAttemptQueryOptions(lessonId,attemptId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSkillReportUrl = (params?: GetSkillReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/review/skills?${stringifiedParams}` : `/api/review/skills`
+}
+
+/**
+ * The profile and the recommendations are computed from marks already recorded and cost nothing, so this is safe to call on every dashboard load. The Arabic advice sentence costs a model call and is only written when advice=true — and failing to get it does not fail the request.
+ * @summary Skill profile, with what to work on next
+ */
+export const getSkillReport = async (params?: GetSkillReportParams, options?: Parameters<typeof customFetch>[1]): Promise<SkillReport> => {
+
+  return customFetch<SkillReport>(getGetSkillReportUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSkillReportQueryKey = (params?: GetSkillReportParams,) => {
+    return [
+    `/api/review/skills`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSkillReportQueryOptions = <TData = Awaited<ReturnType<typeof getSkillReport>>, TError = ErrorType<unknown>>(params?: GetSkillReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkillReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSkillReportQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSkillReport>>> = ({ signal }) => getSkillReport(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSkillReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSkillReportQueryResult = NonNullable<Awaited<ReturnType<typeof getSkillReport>>>
+export type GetSkillReportQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Skill profile, with what to work on next
+ */
+
+export function useGetSkillReport<TData = Awaited<ReturnType<typeof getSkillReport>>, TError = ErrorType<unknown>>(
+ params?: GetSkillReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSkillReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSkillReportQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetActiveConversationUrl = () => {
+
+
+
+
+  return `/api/conversation/active`
+}
+
+/**
+ * Null when the student has no active session, so a reload does not lose the thread.
+ * @summary Resume whatever conversation is open
+ */
+export const getActiveConversation = async ( options?: Parameters<typeof customFetch>[1]): Promise<ActiveConversationResponse> => {
+
+  return customFetch<ActiveConversationResponse>(getGetActiveConversationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetActiveConversationQueryKey = () => {
+    return [
+    `/api/conversation/active`
+    ] as const;
+    }
+
+
+export const getGetActiveConversationQueryOptions = <TData = Awaited<ReturnType<typeof getActiveConversation>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getActiveConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetActiveConversationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getActiveConversation>>> = ({ signal }) => getActiveConversation({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getActiveConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetActiveConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getActiveConversation>>>
+export type GetActiveConversationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Resume whatever conversation is open
+ */
+
+export function useGetActiveConversation<TData = Awaited<ReturnType<typeof getActiveConversation>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getActiveConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetActiveConversationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartConversationUrl = () => {
+
+
+
+
+  return `/api/conversation/start`
+}
+
+/**
+ * The caps are read from the block's configuration once and copied onto the session, so a curriculum edit mid-conversation cannot change the rules a student is already playing by.
+ * @summary Open a conversation against a lesson
+ */
+export const startConversation = async (conversationStartInput: ConversationStartInput, options?: Parameters<typeof customFetch>[1]): Promise<ConversationStart> => {
+
+  return customFetch<ConversationStart>(getStartConversationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(conversationStartInput)
+  }
+);}
+
+
+
+
+
+export const getStartConversationMutationOptions = <TError = ErrorType<ErrorResponse | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startConversation>>, TError,{data: BodyType<ConversationStartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startConversation>>, TError,{data: BodyType<ConversationStartInput>}, TContext> => {
+
+const mutationKey = ['startConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startConversation>>, {data: BodyType<ConversationStartInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startConversation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartConversationMutationResult = NonNullable<Awaited<ReturnType<typeof startConversation>>>
+    export type StartConversationMutationBody = BodyType<ConversationStartInput>
+    export type StartConversationMutationError = ErrorType<ErrorResponse | CodedError>
+
+    /**
+ * @summary Open a conversation against a lesson
+ */
+export const useStartConversation = <TError = ErrorType<ErrorResponse | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startConversation>>, TError,{data: BodyType<ConversationStartInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startConversation>>,
+        TError,
+        {data: BodyType<ConversationStartInput>},
+        TContext
+      > => {
+      return useMutation(getStartConversationMutationOptions(options));
+    }
+
+export const getTakeConversationTurnUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/conversation/${sessionId}/turn`
+}
+
+/**
+ * Send either `message` (typed) or `mediaId` (spoken); one of the two is required. A spoken turn is transcribed server-side and the transcript comes back alongside the reply, because the client cannot transcribe and the tutor must be answering what was actually said.
+ * @summary One exchange — the student says something, the tutor replies
+ */
+export const takeConversationTurn = async (sessionId: number,
+    conversationTurnInput: ConversationTurnInput, options?: Parameters<typeof customFetch>[1]): Promise<ConversationTurn> => {
+
+  return customFetch<ConversationTurn>(getTakeConversationTurnUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(conversationTurnInput)
+  }
+);}
+
+
+
+
+
+export const getTakeConversationTurnMutationOptions = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof takeConversationTurn>>, TError,{sessionId: number;data: BodyType<ConversationTurnInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof takeConversationTurn>>, TError,{sessionId: number;data: BodyType<ConversationTurnInput>}, TContext> => {
+
+const mutationKey = ['takeConversationTurn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof takeConversationTurn>>, {sessionId: number;data: BodyType<ConversationTurnInput>}> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  takeConversationTurn(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TakeConversationTurnMutationResult = NonNullable<Awaited<ReturnType<typeof takeConversationTurn>>>
+    export type TakeConversationTurnMutationBody = BodyType<ConversationTurnInput>
+    export type TakeConversationTurnMutationError = ErrorType<CodedError>
+
+    /**
+ * @summary One exchange — the student says something, the tutor replies
+ */
+export const useTakeConversationTurn = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof takeConversationTurn>>, TError,{sessionId: number;data: BodyType<ConversationTurnInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof takeConversationTurn>>,
+        TError,
+        {sessionId: number;data: BodyType<ConversationTurnInput>},
+        TContext
+      > => {
+      return useMutation(getTakeConversationTurnMutationOptions(options));
+    }
+
+export const getEndConversationUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/conversation/${sessionId}/end`
+}
+
+/**
+ * @summary Close a conversation
+ */
+export const endConversation = async (sessionId: number, options?: Parameters<typeof customFetch>[1]): Promise<ConversationEnded> => {
+
+  return customFetch<ConversationEnded>(getEndConversationUrl(sessionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getEndConversationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endConversation>>, TError,{sessionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof endConversation>>, TError,{sessionId: number}, TContext> => {
+
+const mutationKey = ['endConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof endConversation>>, {sessionId: number}> = (props) => {
+          const {sessionId} = props ?? {};
+
+          return  endConversation(sessionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EndConversationMutationResult = NonNullable<Awaited<ReturnType<typeof endConversation>>>
+
+    export type EndConversationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Close a conversation
+ */
+export const useEndConversation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endConversation>>, TError,{sessionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof endConversation>>,
+        TError,
+        {sessionId: number},
+        TContext
+      > => {
+      return useMutation(getEndConversationMutationOptions(options));
+    }
+
+export const getGetPracticeProfileUrl = () => {
+
+
+
+
+  return `/api/practice/profile`
+}
+
+/**
+ * profile is null until the student has opted in once.
+ * @summary The student's own practice preferences, and the limits that apply
+ */
+export const getPracticeProfile = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeProfileResponse> => {
+
+  return customFetch<PracticeProfileResponse>(getGetPracticeProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPracticeProfileQueryKey = () => {
+    return [
+    `/api/practice/profile`
+    ] as const;
+    }
+
+
+export const getGetPracticeProfileQueryOptions = <TData = Awaited<ReturnType<typeof getPracticeProfile>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPracticeProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPracticeProfile>>> = ({ signal }) => getPracticeProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPracticeProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPracticeProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getPracticeProfile>>>
+export type GetPracticeProfileQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary The student's own practice preferences, and the limits that apply
+ */
+
+export function useGetPracticeProfile<TData = Awaited<ReturnType<typeof getPracticeProfile>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPracticeProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSavePracticeProfileUrl = () => {
+
+
+
+
+  return `/api/practice/profile`
+}
+
+/**
+ * isAvailable is the opt-in to the whole feature; matching never considers a student who has not set it. Tags are de-duplicated case-insensitively and trimmed to the documented maximums server-side.
+ * @summary Opt in or out, and say what to practise
+ */
+export const savePracticeProfile = async (practicePreferencesInput: PracticePreferencesInput, options?: Parameters<typeof customFetch>[1]): Promise<PracticeProfileSaved> => {
+
+  return customFetch<PracticeProfileSaved>(getSavePracticeProfileUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(practicePreferencesInput)
+  }
+);}
+
+
+
+
+
+export const getSavePracticeProfileMutationOptions = <TError = ErrorType<ValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePracticeProfile>>, TError,{data: BodyType<PracticePreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof savePracticeProfile>>, TError,{data: BodyType<PracticePreferencesInput>}, TContext> => {
+
+const mutationKey = ['savePracticeProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof savePracticeProfile>>, {data: BodyType<PracticePreferencesInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  savePracticeProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SavePracticeProfileMutationResult = NonNullable<Awaited<ReturnType<typeof savePracticeProfile>>>
+    export type SavePracticeProfileMutationBody = BodyType<PracticePreferencesInput>
+    export type SavePracticeProfileMutationError = ErrorType<ValidationError>
+
+    /**
+ * @summary Opt in or out, and say what to practise
+ */
+export const useSavePracticeProfile = <TError = ErrorType<ValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof savePracticeProfile>>, TError,{data: BodyType<PracticePreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof savePracticeProfile>>,
+        TError,
+        {data: BodyType<PracticePreferencesInput>},
+        TContext
+      > => {
+      return useMutation(getSavePracticeProfileMutationOptions(options));
+    }
+
+export const getJoinPracticeQueueUrl = () => {
+
+
+
+
+  return `/api/practice/queue`
+}
+
+/**
+ * Matching happens on joining rather than on a timer, so the person who arrives last has the freshest picture of who is waiting. An empty pool is not an error: session comes back null with waiting=0.
+ * @summary Join the pool, taking a partner if one is already waiting
+ */
+export const joinPracticeQueue = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeQueueResult> => {
+
+  return customFetch<PracticeQueueResult>(getJoinPracticeQueueUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getJoinPracticeQueueMutationOptions = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinPracticeQueue>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof joinPracticeQueue>>, TError,void, TContext> => {
+
+const mutationKey = ['joinPracticeQueue'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof joinPracticeQueue>>, void> = () => {
+
+
+          return  joinPracticeQueue(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type JoinPracticeQueueMutationResult = NonNullable<Awaited<ReturnType<typeof joinPracticeQueue>>>
+
+    export type JoinPracticeQueueMutationError = ErrorType<CodedError>
+
+    /**
+ * @summary Join the pool, taking a partner if one is already waiting
+ */
+export const useJoinPracticeQueue = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof joinPracticeQueue>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof joinPracticeQueue>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getJoinPracticeQueueMutationOptions(options));
+    }
+
+export const getLeavePracticeQueueUrl = () => {
+
+
+
+
+  return `/api/practice/queue`
+}
+
+/**
+ * @summary Leave the pool
+ */
+export const leavePracticeQueue = async ( options?: Parameters<typeof customFetch>[1]): Promise<OkResponse> => {
+
+  return customFetch<OkResponse>(getLeavePracticeQueueUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getLeavePracticeQueueMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leavePracticeQueue>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof leavePracticeQueue>>, TError,void, TContext> => {
+
+const mutationKey = ['leavePracticeQueue'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof leavePracticeQueue>>, void> = () => {
+
+
+          return  leavePracticeQueue(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LeavePracticeQueueMutationResult = NonNullable<Awaited<ReturnType<typeof leavePracticeQueue>>>
+
+    export type LeavePracticeQueueMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Leave the pool
+ */
+export const useLeavePracticeQueue = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leavePracticeQueue>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof leavePracticeQueue>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLeavePracticeQueueMutationOptions(options));
+    }
+
+export const getPollPracticeStatusUrl = () => {
+
+
+
+
+  return `/api/practice/poll`
+}
+
+/**
+ * The one endpoint a client polls, while queued and while in a call. It is a POST despite reading like a GET because it changes state on purpose: it refreshes presence and closes anything overdue. A student who stops polling drops out of matching by itself.
+ * @summary What is happening for this student right now
+ */
+export const pollPracticeStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeStatus> => {
+
+  return customFetch<PracticeStatus>(getPollPracticeStatusUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPollPracticeStatusMutationOptions = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pollPracticeStatus>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pollPracticeStatus>>, TError,void, TContext> => {
+
+const mutationKey = ['pollPracticeStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pollPracticeStatus>>, void> = () => {
+
+
+          return  pollPracticeStatus(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PollPracticeStatusMutationResult = NonNullable<Awaited<ReturnType<typeof pollPracticeStatus>>>
+
+    export type PollPracticeStatusMutationError = ErrorType<CodedError>
+
+    /**
+ * @summary What is happening for this student right now
+ */
+export const usePollPracticeStatus = <TError = ErrorType<CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pollPracticeStatus>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pollPracticeStatus>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getPollPracticeStatusMutationOptions(options));
+    }
+
+export const getGetPracticeIceServersUrl = () => {
+
+
+
+
+  return `/api/practice/ice-servers`
+}
+
+/**
+ * Served rather than bundled so a TURN relay can be switched on with environment variables, and so its credentials never sit in public client code. With no TURN configured this is STUN only, and roughly one connection in five will not establish — hasTurn says which case you are in, so a client can say so plainly rather than sitting on "connecting…".
+ * @summary What to hand RTCPeerConnection
+ */
+export const getPracticeIceServers = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeIceServers> => {
+
+  return customFetch<PracticeIceServers>(getGetPracticeIceServersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPracticeIceServersQueryKey = () => {
+    return [
+    `/api/practice/ice-servers`
+    ] as const;
+    }
+
+
+export const getGetPracticeIceServersQueryOptions = <TData = Awaited<ReturnType<typeof getPracticeIceServers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeIceServers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPracticeIceServersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPracticeIceServers>>> = ({ signal }) => getPracticeIceServers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPracticeIceServers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPracticeIceServersQueryResult = NonNullable<Awaited<ReturnType<typeof getPracticeIceServers>>>
+export type GetPracticeIceServersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary What to hand RTCPeerConnection
+ */
+
+export function useGetPracticeIceServers<TData = Awaited<ReturnType<typeof getPracticeIceServers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeIceServers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPracticeIceServersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAcceptPracticeSessionUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/practice/sessions/${sessionId}/accept`
+}
+
+/**
+ * @summary Answer a ringing call
+ */
+export const acceptPracticeSession = async (sessionId: number, options?: Parameters<typeof customFetch>[1]): Promise<PracticeSessionResponse> => {
+
+  return customFetch<PracticeSessionResponse>(getAcceptPracticeSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAcceptPracticeSessionMutationOptions = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptPracticeSession>>, TError,{sessionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptPracticeSession>>, TError,{sessionId: number}, TContext> => {
+
+const mutationKey = ['acceptPracticeSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptPracticeSession>>, {sessionId: number}> = (props) => {
+          const {sessionId} = props ?? {};
+
+          return  acceptPracticeSession(sessionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptPracticeSessionMutationResult = NonNullable<Awaited<ReturnType<typeof acceptPracticeSession>>>
+
+    export type AcceptPracticeSessionMutationError = ErrorType<ValidationError | CodedError>
+
+    /**
+ * @summary Answer a ringing call
+ */
+export const useAcceptPracticeSession = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptPracticeSession>>, TError,{sessionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptPracticeSession>>,
+        TError,
+        {sessionId: number},
+        TContext
+      > => {
+      return useMutation(getAcceptPracticeSessionMutationOptions(options));
+    }
+
+export const getEndPracticeSessionUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/practice/sessions/${sessionId}/end`
+}
+
+/**
+ * Unilateral and immediate by design: someone who needs to get out of a conversation is not made to confirm it first. The other side finds out on its next poll.
+ * @summary End a call, or decline one that is still ringing
+ */
+export const endPracticeSession = async (sessionId: number,
+    practiceEndInput?: PracticeEndInput, options?: Parameters<typeof customFetch>[1]): Promise<PracticeSessionResponse> => {
+
+  return customFetch<PracticeSessionResponse>(getEndPracticeSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(practiceEndInput)
+  }
+);}
+
+
+
+
+
+export const getEndPracticeSessionMutationOptions = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endPracticeSession>>, TError,{sessionId: number;data?: BodyType<PracticeEndInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof endPracticeSession>>, TError,{sessionId: number;data?: BodyType<PracticeEndInput>}, TContext> => {
+
+const mutationKey = ['endPracticeSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof endPracticeSession>>, {sessionId: number;data?: BodyType<PracticeEndInput>}> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  endPracticeSession(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EndPracticeSessionMutationResult = NonNullable<Awaited<ReturnType<typeof endPracticeSession>>>
+    export type EndPracticeSessionMutationBody = BodyType<PracticeEndInput> | undefined
+    export type EndPracticeSessionMutationError = ErrorType<ValidationError | CodedError>
+
+    /**
+ * @summary End a call, or decline one that is still ringing
+ */
+export const useEndPracticeSession = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endPracticeSession>>, TError,{sessionId: number;data?: BodyType<PracticeEndInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof endPracticeSession>>,
+        TError,
+        {sessionId: number;data?: BodyType<PracticeEndInput>},
+        TContext
+      > => {
+      return useMutation(getEndPracticeSessionMutationOptions(options));
+    }
+
+export const getSendPracticeSignalUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/practice/sessions/${sessionId}/signal`
+}
+
+/**
+ * The recipient is derived from the session, never taken from the request: a student can only ever send into their own call, to the one other person in it. SDP and ICE candidates are opaque to the server, which only carries them.
+ * @summary Hand one WebRTC setup message to the other side
+ */
+export const sendPracticeSignal = async (sessionId: number,
+    practiceSignalInput: PracticeSignalInput, options?: Parameters<typeof customFetch>[1]): Promise<OkResponse> => {
+
+  return customFetch<OkResponse>(getSendPracticeSignalUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(practiceSignalInput)
+  }
+);}
+
+
+
+
+
+export const getSendPracticeSignalMutationOptions = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPracticeSignal>>, TError,{sessionId: number;data: BodyType<PracticeSignalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendPracticeSignal>>, TError,{sessionId: number;data: BodyType<PracticeSignalInput>}, TContext> => {
+
+const mutationKey = ['sendPracticeSignal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendPracticeSignal>>, {sessionId: number;data: BodyType<PracticeSignalInput>}> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  sendPracticeSignal(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendPracticeSignalMutationResult = NonNullable<Awaited<ReturnType<typeof sendPracticeSignal>>>
+    export type SendPracticeSignalMutationBody = BodyType<PracticeSignalInput>
+    export type SendPracticeSignalMutationError = ErrorType<ValidationError | CodedError>
+
+    /**
+ * @summary Hand one WebRTC setup message to the other side
+ */
+export const useSendPracticeSignal = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPracticeSignal>>, TError,{sessionId: number;data: BodyType<PracticeSignalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendPracticeSignal>>,
+        TError,
+        {sessionId: number;data: BodyType<PracticeSignalInput>},
+        TContext
+      > => {
+      return useMutation(getSendPracticeSignalMutationOptions(options));
+    }
+
+export const getReadPracticeSignalsUrl = (sessionId: number,
+    params?: ReadPracticeSignalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/practice/sessions/${sessionId}/signals?${stringifiedParams}` : `/api/practice/sessions/${sessionId}/signals`
+}
+
+/**
+ * `id` is the cursor: ask for everything after the highest id already seen. Nothing needs deleting, and a client that misses a poll catches up on the next one.
+ * @summary Read this side's signalling mailbox
+ */
+export const readPracticeSignals = async (sessionId: number,
+    params?: ReadPracticeSignalsParams, options?: Parameters<typeof customFetch>[1]): Promise<PracticeSignalsResponse> => {
+
+  return customFetch<PracticeSignalsResponse>(getReadPracticeSignalsUrl(sessionId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getReadPracticeSignalsQueryKey = (sessionId: number,
+    params?: ReadPracticeSignalsParams,) => {
+    return [
+    `/api/practice/sessions/${sessionId}/signals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getReadPracticeSignalsQueryOptions = <TData = Awaited<ReturnType<typeof readPracticeSignals>>, TError = ErrorType<ValidationError | CodedError>>(sessionId: number,
+    params?: ReadPracticeSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof readPracticeSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getReadPracticeSignalsQueryKey(sessionId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof readPracticeSignals>>> = ({ signal }) => readPracticeSignals(sessionId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: sessionId !== null && sessionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof readPracticeSignals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ReadPracticeSignalsQueryResult = NonNullable<Awaited<ReturnType<typeof readPracticeSignals>>>
+export type ReadPracticeSignalsQueryError = ErrorType<ValidationError | CodedError>
+
+
+/**
+ * @summary Read this side's signalling mailbox
+ */
+
+export function useReadPracticeSignals<TData = Awaited<ReturnType<typeof readPracticeSignals>>, TError = ErrorType<ValidationError | CodedError>>(
+ sessionId: number,
+    params?: ReadPracticeSignalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof readPracticeSignals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getReadPracticeSignalsQueryOptions(sessionId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListPracticeBlocksUrl = () => {
+
+
+
+
+  return `/api/practice/blocks`
+}
+
+/**
+ * @summary Who this student has blocked
+ */
+export const listPracticeBlocks = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeBlocksResponse> => {
+
+  return customFetch<PracticeBlocksResponse>(getListPracticeBlocksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPracticeBlocksQueryKey = () => {
+    return [
+    `/api/practice/blocks`
+    ] as const;
+    }
+
+
+export const getListPracticeBlocksQueryOptions = <TData = Awaited<ReturnType<typeof listPracticeBlocks>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPracticeBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPracticeBlocksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPracticeBlocks>>> = ({ signal }) => listPracticeBlocks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPracticeBlocks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPracticeBlocksQueryResult = NonNullable<Awaited<ReturnType<typeof listPracticeBlocks>>>
+export type ListPracticeBlocksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Who this student has blocked
+ */
+
+export function useListPracticeBlocks<TData = Awaited<ReturnType<typeof listPracticeBlocks>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPracticeBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPracticeBlocksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getBlockPracticePartnerUrl = () => {
+
+
+
+
+  return `/api/practice/block`
+}
+
+/**
+ * A block works both ways round and is permanent unless the student reverses it. No mirrored row is written, because that would tell the blocked student something they are not owed.
+ * @summary Block someone
+ */
+export const blockPracticePartner = async (practiceBlockInput: PracticeBlockInput, options?: Parameters<typeof customFetch>[1]): Promise<OkResponse> => {
+
+  return customFetch<OkResponse>(getBlockPracticePartnerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(practiceBlockInput)
+  }
+);}
+
+
+
+
+
+export const getBlockPracticePartnerMutationOptions = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockPracticePartner>>, TError,{data: BodyType<PracticeBlockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof blockPracticePartner>>, TError,{data: BodyType<PracticeBlockInput>}, TContext> => {
+
+const mutationKey = ['blockPracticePartner'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof blockPracticePartner>>, {data: BodyType<PracticeBlockInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  blockPracticePartner(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BlockPracticePartnerMutationResult = NonNullable<Awaited<ReturnType<typeof blockPracticePartner>>>
+    export type BlockPracticePartnerMutationBody = BodyType<PracticeBlockInput>
+    export type BlockPracticePartnerMutationError = ErrorType<ValidationError | CodedError>
+
+    /**
+ * @summary Block someone
+ */
+export const useBlockPracticePartner = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockPracticePartner>>, TError,{data: BodyType<PracticeBlockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof blockPracticePartner>>,
+        TError,
+        {data: BodyType<PracticeBlockInput>},
+        TContext
+      > => {
+      return useMutation(getBlockPracticePartnerMutationOptions(options));
+    }
+
+export const getUnblockPracticePartnerUrl = (userId: number,) => {
+
+
+
+
+  return `/api/practice/block/${userId}`
+}
+
+/**
+ * @summary Reverse a block
+ */
+export const unblockPracticePartner = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<OkResponse> => {
+
+  return customFetch<OkResponse>(getUnblockPracticePartnerUrl(userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnblockPracticePartnerMutationOptions = <TError = ErrorType<ValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockPracticePartner>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unblockPracticePartner>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['unblockPracticePartner'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unblockPracticePartner>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  unblockPracticePartner(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnblockPracticePartnerMutationResult = NonNullable<Awaited<ReturnType<typeof unblockPracticePartner>>>
+
+    export type UnblockPracticePartnerMutationError = ErrorType<ValidationError>
+
+    /**
+ * @summary Reverse a block
+ */
+export const useUnblockPracticePartner = <TError = ErrorType<ValidationError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockPracticePartner>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unblockPracticePartner>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getUnblockPracticePartnerMutationOptions(options));
+    }
+
+export const getReportPracticePartnerUrl = () => {
+
+
+
+
+  return `/api/practice/report`
+}
+
+/**
+ * Append-only, and nothing is acted on automatically — an account is not suspended because two people reported it. Reporting also blocks by default, since reporting someone almost always means not wanting to meet them again.
+ * @summary Report someone to an administrator
+ */
+export const reportPracticePartner = async (practiceReportInput: PracticeReportInput, options?: Parameters<typeof customFetch>[1]): Promise<PracticeReportCreated> => {
+
+  return customFetch<PracticeReportCreated>(getReportPracticePartnerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(practiceReportInput)
+  }
+);}
+
+
+
+
+
+export const getReportPracticePartnerMutationOptions = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportPracticePartner>>, TError,{data: BodyType<PracticeReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reportPracticePartner>>, TError,{data: BodyType<PracticeReportInput>}, TContext> => {
+
+const mutationKey = ['reportPracticePartner'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reportPracticePartner>>, {data: BodyType<PracticeReportInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  reportPracticePartner(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReportPracticePartnerMutationResult = NonNullable<Awaited<ReturnType<typeof reportPracticePartner>>>
+    export type ReportPracticePartnerMutationBody = BodyType<PracticeReportInput>
+    export type ReportPracticePartnerMutationError = ErrorType<ValidationError | CodedError>
+
+    /**
+ * @summary Report someone to an administrator
+ */
+export const useReportPracticePartner = <TError = ErrorType<ValidationError | CodedError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reportPracticePartner>>, TError,{data: BodyType<PracticeReportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reportPracticePartner>>,
+        TError,
+        {data: BodyType<PracticeReportInput>},
+        TContext
+      > => {
+      return useMutation(getReportPracticePartnerMutationOptions(options));
+    }
+
+export const getGetPracticeHistoryUrl = () => {
+
+
+
+
+  return `/api/practice/history`
+}
+
+/**
+ * @summary This student's recent calls
+ */
+export const getPracticeHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<PracticeHistoryResponse> => {
+
+  return customFetch<PracticeHistoryResponse>(getGetPracticeHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPracticeHistoryQueryKey = () => {
+    return [
+    `/api/practice/history`
+    ] as const;
+    }
+
+
+export const getGetPracticeHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getPracticeHistory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPracticeHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPracticeHistory>>> = ({ signal }) => getPracticeHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPracticeHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPracticeHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getPracticeHistory>>>
+export type GetPracticeHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary This student's recent calls
+ */
+
+export function useGetPracticeHistory<TData = Awaited<ReturnType<typeof getPracticeHistory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPracticeHistoryQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

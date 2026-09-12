@@ -20,7 +20,7 @@ If you want the deeper "what does each feature actually do, and how good is the 
 
 **Caching / rate limiting / AI quotas** — Redis (`ioredis`), used for shared caching across servers, shared rate-limit counters, and daily AI-usage limits. The app is designed to keep working (in a reduced way) if Redis is unavailable — see [docs/redis-arch.md](docs/redis-arch.md).
 
-**API contract** — one OpenAPI spec (`lib/api-spec/openapi.yaml`) is the source of truth; a tool called Orval generates the typed React Query client (`lib/api-client-react`) from it, so the frontend and backend can't silently drift apart on what an endpoint expects or returns.
+**API contract** — one OpenAPI spec (`lib/api-spec/openapi.yaml`) is the source of truth; a tool called Orval generates the typed React Query client (`lib/api-client-react`) from it, so the frontend and backend can't silently drift apart on what an endpoint expects or returns. The API server also serves that spec as a browsable Swagger UI at `/docs` — see [docs/api-reference.md](docs/api-reference.md) if you are writing a client (mobile included).
 
 **Tooling** — `pnpm` workspaces (monorepo), TypeScript throughout, Docker + `docker-compose` for local development, `Dockerfile` with separate build targets for the API, the web frontend, and one-off database migrations.
 
@@ -46,10 +46,42 @@ This is a monorepo — one repository, several packages that depend on each othe
 
 **Deploying it:** the frontend (a static Vite build) and the API (a long-running server needing a persistent database/Redis connection) are meant to be deployed separately — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for why and how.
 
+## API documentation
+
+The API server serves a browsable **Swagger UI** over the OpenAPI contract — every
+endpoint with its parameters, request and response shapes, and a working "Try it
+out". Start the stack (`docker compose up`) and open:
+
+| Where | URL |
+| --- | --- |
+| On the API server (canonical) | **http://localhost:8080/docs** |
+| Through the web app's proxy | http://localhost:5173/api/docs |
+| A deployed API | `https://<api-host>/docs` |
+| The raw spec, for code generators | append `/openapi.yaml` to any of the above |
+
+Both paths serve the same page. `/api/docs` exists because the web app's origin
+only forwards `/api` — so opening `/docs` on the **frontend** port gives you the
+React app, not the docs.
+
+**Trying endpoints out:** authentication is a session cookie, not a token, and the
+page is configured to send it. Call `POST /auth/login` from the docs page first;
+every endpoint marked with a padlock then works for the rest of the session.
+
+**On a deployed environment** the docs are off by default and enabled with
+`API_DOCS_ENABLED=true` (see [.env.example](.env.example)). Locally they are on
+without any setup.
+
+**Writing a client (mobile included)?** Read
+[docs/api-reference.md](docs/api-reference.md) first — it covers the cookie-based
+auth a native app has to handle, client code generation, and the three flows that
+are easy to get wrong: the three-call recording upload, the asynchronous grading
+you have to poll for, and the peer-to-peer voice-practice signalling.
+
 ## Where to look next
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the original architecture notes (curriculum structure, subscription plans, product conventions)
 - [docs/arch-foundation.md](docs/arch-foundation.md) — the production-hardening pass (security middleware, DB indexes, bug fixes)
 - [docs/redis-arch.md](docs/redis-arch.md) — caching, rate limiting, and AI quota details
 - [docs/multi-curriculum-arch.md](docs/multi-curriculum-arch.md) — how adding a new language/curriculum works
 - [docs/features/](docs/features/) — what each feature does and a quality review of the code behind it
+- [docs/api-reference.md](docs/api-reference.md) — the Swagger UI, how authentication works for native clients, and the upload/grading/WebRTC flows a client has to get right
 - [docs/RUNNING.md](docs/RUNNING.md) / [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — running locally and deploying

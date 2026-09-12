@@ -14,6 +14,7 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { RedisStore, type SendCommandFn } from "rate-limit-redis";
 import router from "./routes";
+import docsRouter from "./routes/docs";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
 import { redis } from "./services/redis";
@@ -60,6 +61,25 @@ app.use(cors({ origin: allowedOrigin ?? true, credentials: true }));
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+
+// ── API reference (Swagger UI) ─────────────────────────────────────────────────
+// On by default in development so the docs are there without extra setup; off in
+// production unless API_DOCS_ENABLED=true, so a deployment opts in deliberately.
+// Mounted before sessions and rate limiting: it is static content, it should not
+// create sessions, and it must not eat the caller's /api request budget.
+// An empty API_DOCS_ENABLED counts as unset: .env.example ships the key blank,
+// and copying it must not turn the docs off in development.
+const docsFlag = process.env.API_DOCS_ENABLED?.trim();
+const docsEnabled = docsFlag ? docsFlag === "true" : process.env.NODE_ENV !== "production";
+
+if (docsEnabled) {
+  // /docs is the canonical URL on the API host. /api/docs is the same page
+  // reachable through anything that already forwards /api — the Vite dev server
+  // proxy and the Vercel rewrite — so the docs work from the web app's origin too.
+  app.use("/docs", docsRouter);
+  app.use("/api/docs", docsRouter);
+  logger.info("API reference available at /docs and /api/docs");
+}
 
 // ── Sessions ───────────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
