@@ -47,6 +47,8 @@ environment variables:
 | `ALLOWED_ORIGIN` | Your Vercel URL, e.g. `https://lughati.vercel.app` |
 | `TRUST_PROXY` | `1` behind the host's load balancer |
 | `REDIS_URL` | Optional, but needed for shared rate limits and AI quota |
+| `ADMIN_EMAIL` | The first administrator's address. Defaults to `admin@example.com` |
+| `ADMIN_PASSWORD` | That administrator's password. **Change it from the default** |
 
 Then create the schema and baseline data, once, against the production database:
 
@@ -60,6 +62,22 @@ DATABASE_URL=... pnpm run seed
 
 Neither runs automatically on deploy — that is deliberate, so a rollout cannot
 silently mutate the production schema.
+
+### The first administrator
+
+The API creates one administrator on start, from `ADMIN_EMAIL` and
+`ADMIN_PASSWORD`, and only if no administrator exists yet. Set both in this
+deployment's environment before the first start.
+
+**Change `ADMIN_PASSWORD` from the documented default.** `admin@example.com`
+with the password written down in a public repository is one of the most
+reliably scanned-for ways to lose an application. The password must pass the
+same strength rules a student's does (8+ characters, a letter and a number); if
+it does not, a warning is logged and no administrator is created.
+
+If you would rather create the account by hand, set `ADMIN_EMAIL` to an address
+nobody will register and promote your own account with SQL — once any
+administrator exists, this never runs again.
 
 ### 2. Deploy the frontend
 

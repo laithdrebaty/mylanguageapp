@@ -20,6 +20,33 @@ schema, then applies the SQL migrations in `artifacts/api-server/migrations`.
 The API only starts once that has finished successfully. The migrations are
 idempotent, so this is safe on every startup.
 
+### Logging in
+
+The API creates one administrator on start, so a fresh `docker compose up` has a
+way in. The credentials come from the root `.env` — copy `.env.example` to `.env`
+first, or the compose defaults below are used:
+
+| | |
+| --- | --- |
+| Email | `ADMIN_EMAIL`, default `admin@example.com` |
+| Password | `ADMIN_PASSWORD`, default `admin@1234` |
+
+It happens **once**: if any administrator already exists, nothing is created — so
+promoting your own account and deleting this one is permanent, and the default
+will not reappear on the next restart. For a deployment, put different values in
+that deployment's `.env`.
+
+Registration at `/register` only ever creates students. There is no promote
+endpoint, so a second administrator is made by editing the row:
+
+```
+docker compose exec db psql -U ascension -d ascension \
+  -c "update users set role='admin' where email='you@example.com';"
+```
+
+The role is copied into the session at login, so log out and back in after
+changing it.
+
 The frontend calls the API with relative `/api` paths so both can share a single
 origin in production. In development, Vite proxies `/api` through to the API
 server; `API_PROXY_TARGET` controls where.
