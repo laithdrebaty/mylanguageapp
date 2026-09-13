@@ -954,6 +954,1034 @@ export interface AdminLessonUpdate {
   passingScore?: number;
 }
 
+/**
+ * An error carrying a machine-readable `code` alongside the message. The message is written for a person; branch on `code`.
+ */
+export interface CodedError {
+  error: string;
+  code?: string;
+}
+
+export interface ValidationError {
+  error: string;
+  /**
+     * Field-level detail from the server's schema check. Shape varies.
+     * @nullable
+     */
+  details?: unknown[] | string | null;
+}
+
+export interface OkResponse {
+  ok: boolean;
+}
+
+export interface MediaConfig {
+  /** False when this deployment has no object storage configured. */
+  enabled: boolean;
+  /** Content types accepted by POST /media/uploads. */
+  allowedAudioTypes: string[];
+  maxBytes: number;
+  maxDurationSeconds: number;
+}
+
+/**
+ * What the recording is for. A student may only upload for these two; curriculum media is a separate staff endpoint.
+ */
+export type MediaUploadInputPurpose = typeof MediaUploadInputPurpose[keyof typeof MediaUploadInputPurpose];
+
+
+export const MediaUploadInputPurpose = {
+  lesson_activity: 'lesson_activity',
+  quiz_response: 'quiz_response',
+} as const;
+
+export type MediaUploadInputContentType = typeof MediaUploadInputContentType[keyof typeof MediaUploadInputContentType];
+
+
+export const MediaUploadInputContentType = {
+  'audio/webm': 'audio/webm',
+  'audio/ogg': 'audio/ogg',
+  'audio/mp4': 'audio/mp4',
+  'audio/mpeg': 'audio/mpeg',
+  'audio/wav': 'audio/wav',
+  'audio/x-wav': 'audio/x-wav',
+} as const;
+
+export interface MediaUploadInput {
+  /** What the recording is for. A student may only upload for these two; curriculum media is a separate staff endpoint. */
+  purpose: MediaUploadInputPurpose;
+  contentType: MediaUploadInputContentType;
+  /** What the client is about to upload. Re-measured on completion. */
+  sizeBytes: number;
+  /** @nullable */
+  durationSec?: number | null;
+}
+
+/**
+ * Headers the PUT MUST send, or the signature will not match. Send them exactly as given.
+ */
+export type PresignedUploadHeaders = {[key: string]: string};
+
+export interface PresignedUpload {
+  /** PUT the bytes here directly. Does not go through the API server. */
+  url: string;
+  /** Headers the PUT MUST send, or the signature will not match. Send them exactly as given. */
+  headers: PresignedUploadHeaders;
+  expiresInSeconds: number;
+}
+
+export interface MediaUploadTicket {
+  /** Pass this to .../complete, and then to whatever consumes the recording. */
+  mediaId: number;
+  /** The storage key. Generated server-side; never client-supplied. */
+  key: string;
+  upload: PresignedUpload;
+}
+
+/**
+ * Only a "ready" asset may be attached to an attempt or a turn.
+ */
+export type MediaUploadResultStatus = typeof MediaUploadResultStatus[keyof typeof MediaUploadResultStatus];
+
+
+export const MediaUploadResultStatus = {
+  pending: 'pending',
+  ready: 'ready',
+  failed: 'failed',
+} as const;
+
+export interface MediaUploadResult {
+  mediaId: number;
+  /** Only a "ready" asset may be attached to an attempt or a turn. */
+  status: MediaUploadResultStatus;
+  /** @nullable */
+  sizeBytes?: number | null;
+  /** @nullable */
+  durationSec?: number | null;
+  mimeType: string;
+}
+
+export interface MediaPlaybackUrl {
+  /** Short-lived presigned URL. Do not cache it. */
+  url: string;
+}
+
+export interface QuizListItem {
+  id: number;
+  title: string;
+  titleAr: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  descriptionAr?: string | null;
+  /** @nullable */
+  levelId?: number | null;
+  /**
+     * Null when the quiz is untimed.
+     * @nullable
+     */
+  timeLimitSec?: number | null;
+  /**
+     * Null when retries are unlimited.
+     * @nullable
+     */
+  maxAttempts?: number | null;
+  passingScore: number;
+  xpReward: number;
+  attemptsUsed: number;
+  /**
+     * Null when retries are unlimited.
+     * @nullable
+     */
+  attemptsRemaining: number | null;
+  /**
+     * Best graded score so far, 0-100. Null until something is graded.
+     * @nullable
+     */
+  bestScore: number | null;
+  passed: boolean;
+  /**
+     * An attempt still in progress, to resume rather than restart.
+     * @nullable
+     */
+  activeAttemptId: number | null;
+}
+
+export interface QuizListResponse {
+  quizzes: QuizListItem[];
+}
+
+export type QuizBlockConfigOptionsItem = {
+  id: string;
+  text: string;
+  /** @nullable */
+  textAr?: string | null;
+};
+
+/**
+ * Block configuration with answer keys stripped. `explanation`, `explanationAr` and `correctOptionIds` appear only once answers may be revealed — an immediate-feedback quiz, or a submitted attempt.
+ */
+export interface QuizBlockConfig {
+  points: number;
+  options?: QuizBlockConfigOptionsItem[];
+  minWords?: number;
+  mediaKey?: string;
+  explanation?: string;
+  explanationAr?: string;
+  correctOptionIds?: string[];
+}
+
+/**
+ * One block of a quiz, as the student is allowed to see it.
+ */
+export interface QuizBlock {
+  id: number;
+  /** @nullable */
+  quizId?: number | null;
+  /**
+     * Always null for a quiz block — a block belongs to a lesson or a quiz, never both.
+     * @nullable
+     */
+  lessonId?: number | null;
+  type: string;
+  order: number;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  titleAr?: string | null;
+  /** @nullable */
+  instructions?: string | null;
+  /** @nullable */
+  instructionsAr?: string | null;
+  /** @nullable */
+  content?: string | null;
+  /** @nullable */
+  contentAr?: string | null;
+  /** @nullable */
+  audioNote?: string | null;
+  /** @nullable */
+  prompt?: string | null;
+  /** @nullable */
+  promptAr?: string | null;
+  /** @nullable */
+  exampleAudio?: string | null;
+  /**
+     * Reference recording, resolved via GET /media/{mediaId}/url.
+     * @nullable
+     */
+  referenceMediaId?: number | null;
+  /** True when the student reads a set passage, so pronunciation can be measured against it. */
+  expectsReferenceReading?: boolean;
+  isRequired: boolean;
+  /** @nullable */
+  estimatedMinutes?: number | null;
+  isActive?: boolean;
+  config: QuizBlockConfig;
+  /** @nullable */
+  createdAt?: string | null;
+  /** @nullable */
+  updatedAt?: string | null;
+}
+
+export interface QuizDetail {
+  id: number;
+  title: string;
+  titleAr: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  descriptionAr?: string | null;
+  /** @nullable */
+  instructions?: string | null;
+  /** @nullable */
+  instructionsAr?: string | null;
+  /** @nullable */
+  timeLimitSec?: number | null;
+  /** @nullable */
+  maxAttempts?: number | null;
+  passingScore: number;
+  /** Which version of the quiz these blocks are. Recorded on the attempt. */
+  contentVersion: number;
+  blocks: QuizBlock[];
+}
+
+export type QuizAttemptStatus = typeof QuizAttemptStatus[keyof typeof QuizAttemptStatus];
+
+
+export const QuizAttemptStatus = {
+  in_progress: 'in_progress',
+  submitted: 'submitted',
+  grading: 'grading',
+  graded: 'graded',
+  abandoned: 'abandoned',
+} as const;
+
+export interface QuizAttempt {
+  id: number;
+  quizId: number;
+  userId: number;
+  contentVersion: number;
+  status: QuizAttemptStatus;
+  /**
+     * 0-100 over the blocks that have a verdict. Null until grading starts.
+     * @nullable
+     */
+  score?: number | null;
+  /**
+     * Withheld (null) while any block is still awaiting a verdict.
+     * @nullable
+     */
+  passed?: boolean | null;
+  pendingReviewCount: number;
+  startedAt: string;
+  /** @nullable */
+  submittedAt?: string | null;
+  /** @nullable */
+  gradedAt?: string | null;
+}
+
+export type QuizAttemptStart = QuizAttempt & {
+  /** True when this is the attempt already in progress rather than a new one. */
+  resumed: boolean;
+};
+
+/**
+ * Why a level evaluation cannot be started. `error` is the Arabic sentence to show the student; `code` is what to branch on.
+ */
+export interface QuizEvaluationBlocked {
+  error: string;
+  /** @nullable */
+  code?: string | null;
+  eligibility: EvaluationEligibility;
+}
+
+export interface QuizResponseInput {
+  /** The answer. Shape depends on the block type — selected option ids for a multiple choice, text for writing. Omit for a purely spoken answer. */
+  response?: unknown;
+  /**
+     * A media_assets id from the upload handshake, for a spoken answer. The server verifies it is ready and belongs to this student.
+     * @nullable
+     */
+  mediaId?: number | null;
+}
+
+export interface QuizResponseSaved {
+  id: number;
+  blockId: number;
+  saved: boolean;
+}
+
+export type QuizAttemptResultStatus = typeof QuizAttemptResultStatus[keyof typeof QuizAttemptResultStatus];
+
+
+export const QuizAttemptResultStatus = {
+  in_progress: 'in_progress',
+  submitted: 'submitted',
+  grading: 'grading',
+  graded: 'graded',
+  abandoned: 'abandoned',
+} as const;
+
+export interface PromotionOutcome {
+  promoted: boolean;
+  /** @nullable */
+  fromLevelId: number | null;
+  /** @nullable */
+  toLevelId: number | null;
+  /** @nullable */
+  toLevelCode: string | null;
+  /** @nullable */
+  toLevelName: string | null;
+  /** @nullable */
+  toLevelNameAr: string | null;
+  /** True when the student passed the final level of the curriculum. */
+  curriculumCompleted: boolean;
+}
+
+export interface QuizAttemptResult {
+  id: number;
+  status: QuizAttemptResultStatus;
+  /**
+     * 0-100 over the blocks graded so far, not over the whole quiz.
+     * @nullable
+     */
+  score: number | null;
+  /**
+     * Null while pendingReviewCount is above zero.
+     * @nullable
+     */
+  passed: boolean | null;
+  pendingReviewCount: number;
+  passingScore: number;
+  /** Present only for a level evaluation — whether this moved the student up. */
+  promotion?: PromotionOutcome | null;
+  /**
+     * Present only for a failed level evaluation — lessons to redo first.
+     * @nullable
+     */
+  remediation?: RemediationLesson[] | null;
+}
+
+/**
+ * @nullable
+ */
+export type QuizResponseViewGradedBy = typeof QuizResponseViewGradedBy[keyof typeof QuizResponseViewGradedBy] | null;
+
+
+export const QuizResponseViewGradedBy = {
+  auto: 'auto',
+  ai: 'ai',
+  teacher: 'teacher',
+  pending: 'pending',
+} as const;
+
+export interface QuizResponseView {
+  /** What the student answered. Shape depends on the block type. */
+  response: unknown;
+  /** @nullable */
+  mediaKey: string | null;
+  /**
+     * Null before the attempt is submitted, and while awaiting a verdict.
+     * @nullable
+     */
+  score: number | null;
+  /** @nullable */
+  gradedBy: QuizResponseViewGradedBy;
+  /** @nullable */
+  feedback: string | null;
+  /**
+     * Arabic is the student's language, so this is the one to show.
+     * @nullable
+     */
+  feedbackAr: string | null;
+}
+
+export type QuizAttemptReviewBlock = QuizBlock & ({
+  response: QuizResponseView | null;
+});
+
+export type QuizAttemptReviewAttemptStatus = typeof QuizAttemptReviewAttemptStatus[keyof typeof QuizAttemptReviewAttemptStatus];
+
+
+export const QuizAttemptReviewAttemptStatus = {
+  in_progress: 'in_progress',
+  submitted: 'submitted',
+  grading: 'grading',
+  graded: 'graded',
+  abandoned: 'abandoned',
+} as const;
+
+export type QuizAttemptReviewAttempt = {
+  id: number;
+  quizId: number;
+  status: QuizAttemptReviewAttemptStatus;
+  /** @nullable */
+  score: number | null;
+  /** @nullable */
+  passed: boolean | null;
+  pendingReviewCount: number;
+  startedAt: string;
+  /** @nullable */
+  submittedAt: string | null;
+};
+
+/**
+ * @nullable
+ */
+export type QuizAttemptReviewQuiz = {
+  id: number;
+  title: string;
+  titleAr: string;
+  passingScore: number;
+} | null;
+
+export interface QuizAttemptReview {
+  attempt: QuizAttemptReviewAttempt;
+  /** @nullable */
+  quiz: QuizAttemptReviewQuiz;
+  blocks: QuizAttemptReviewBlock[];
+}
+
+/**
+ * The headline fluency numbers. The full word-by-word alignment is large and only useful to a teacher, so it is not returned here.
+ */
+export interface SpeechMetricsSummary {
+  /**
+     * Words per minute.
+     * @nullable
+     */
+  speechRate?: number | null;
+  /** @nullable */
+  pauseCount?: number | null;
+  /**
+     * Average words spoken between pauses.
+     * @nullable
+     */
+  meanLengthOfRun?: number | null;
+  /** @nullable */
+  fillersPer100Words?: number | null;
+  /**
+     * Words to practise, from the pronunciation alignment.
+     * @nullable
+     */
+  problemWords?: string[] | null;
+  /**
+     * True when fluency could not be measured from this recording.
+     * @nullable
+     */
+  fluencyUnavailable?: boolean | null;
+}
+
+/**
+ * Keep polling while this is "pending".
+ */
+export type LessonActivityAttemptStatusEvaluationStatus = typeof LessonActivityAttemptStatusEvaluationStatus[keyof typeof LessonActivityAttemptStatusEvaluationStatus];
+
+
+export const LessonActivityAttemptStatusEvaluationStatus = {
+  graded: 'graded',
+  pending: 'pending',
+  skipped: 'skipped',
+} as const;
+
+export interface LessonActivityAttemptStatus {
+  attemptId: number;
+  blockId: number;
+  /** Keep polling while this is "pending". */
+  evaluationStatus: LessonActivityAttemptStatusEvaluationStatus;
+  /** @nullable */
+  correct?: boolean | null;
+  /** @nullable */
+  score?: number | null;
+  /** @nullable */
+  feedback?: string | null;
+  /**
+     * Arabic feedback — what the student is shown.
+     * @nullable
+     */
+  feedbackAr?: string | null;
+  /**
+     * What the recogniser heard, for a spoken answer.
+     * @nullable
+     */
+  transcript?: string | null;
+  /** @nullable */
+  pronunciationScore?: number | null;
+  /** @nullable */
+  fluencyScore?: number | null;
+  speechMetrics?: SpeechMetricsSummary | null;
+}
+
+export type SkillSummarySkill = typeof SkillSummarySkill[keyof typeof SkillSummarySkill];
+
+
+export const SkillSummarySkill = {
+  pronunciation: 'pronunciation',
+  fluency: 'fluency',
+  vocabulary: 'vocabulary',
+  grammar: 'grammar',
+  comprehension: 'comprehension',
+  writing: 'writing',
+  speaking: 'speaking',
+} as const;
+
+/**
+ * Treat "none" and "low" as "not enough evidence to tell the student anything".
+ */
+export type SkillSummaryConfidence = typeof SkillSummaryConfidence[keyof typeof SkillSummaryConfidence];
+
+
+export const SkillSummaryConfidence = {
+  none: 'none',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export type SkillSummaryTrend = typeof SkillSummaryTrend[keyof typeof SkillSummaryTrend];
+
+
+export const SkillSummaryTrend = {
+  improving: 'improving',
+  steady: 'steady',
+  declining: 'declining',
+  unknown: 'unknown',
+} as const;
+
+export interface SkillSummary {
+  skill: SkillSummarySkill;
+  /**
+     * 0-100, recency-weighted. Null when there is no evidence at all.
+     * @nullable
+     */
+  score: number | null;
+  sampleCount: number;
+  /** Treat "none" and "low" as "not enough evidence to tell the student anything". */
+  confidence: SkillSummaryConfidence;
+  trend: SkillSummaryTrend;
+  /** @nullable */
+  lastObservedAt: string | null;
+}
+
+export type SkillProfileStrengthsItem = typeof SkillProfileStrengthsItem[keyof typeof SkillProfileStrengthsItem];
+
+
+export const SkillProfileStrengthsItem = {
+  pronunciation: 'pronunciation',
+  fluency: 'fluency',
+  vocabulary: 'vocabulary',
+  grammar: 'grammar',
+  comprehension: 'comprehension',
+  writing: 'writing',
+  speaking: 'speaking',
+} as const;
+
+export type SkillProfileWeaknessesItem = typeof SkillProfileWeaknessesItem[keyof typeof SkillProfileWeaknessesItem];
+
+
+export const SkillProfileWeaknessesItem = {
+  pronunciation: 'pronunciation',
+  fluency: 'fluency',
+  vocabulary: 'vocabulary',
+  grammar: 'grammar',
+  comprehension: 'comprehension',
+  writing: 'writing',
+  speaking: 'speaking',
+} as const;
+
+export interface SkillProfile {
+  skills: SkillSummary[];
+  /** Skills the student is reliably good at. Never low-confidence. */
+  strengths: SkillProfileStrengthsItem[];
+  /** Skills needing work, weakest first. Never low-confidence. */
+  weaknesses: SkillProfileWeaknessesItem[];
+  totalEvidence: number;
+}
+
+export type SkillRecommendationKind = typeof SkillRecommendationKind[keyof typeof SkillRecommendationKind];
+
+
+export const SkillRecommendationKind = {
+  reread_lesson: 'reread_lesson',
+  repeat_pronunciation: 'repeat_pronunciation',
+  practise_words: 'practise_words',
+  redo_lesson: 'redo_lesson',
+} as const;
+
+export type SkillRecommendationSkill = typeof SkillRecommendationSkill[keyof typeof SkillRecommendationSkill];
+
+
+export const SkillRecommendationSkill = {
+  pronunciation: 'pronunciation',
+  fluency: 'fluency',
+  vocabulary: 'vocabulary',
+  grammar: 'grammar',
+  comprehension: 'comprehension',
+  writing: 'writing',
+  speaking: 'speaking',
+} as const;
+
+export interface SkillRecommendation {
+  kind: SkillRecommendationKind;
+  skill: SkillRecommendationSkill;
+  /**
+     * Always an existing lesson. Null only for a word-practice item.
+     * @nullable
+     */
+  lessonId: number | null;
+  /** @nullable */
+  lessonTitle: string | null;
+  /** @nullable */
+  lessonTitleAr: string | null;
+  /** Specific words the student got wrong, for pronunciation practice. */
+  words?: string[];
+  /** Why it is being suggested, in Arabic. */
+  reasonAr: string;
+}
+
+/**
+ * The one skill to work on next. Null when there is too little history.
+ * @nullable
+ */
+export type SkillReportFocus = typeof SkillReportFocus[keyof typeof SkillReportFocus] | null;
+
+
+export const SkillReportFocus = {
+  pronunciation: 'pronunciation',
+  fluency: 'fluency',
+  vocabulary: 'vocabulary',
+  grammar: 'grammar',
+  comprehension: 'comprehension',
+  writing: 'writing',
+  speaking: 'speaking',
+} as const;
+
+export interface SkillReport {
+  profile: SkillProfile;
+  /**
+     * The one skill to work on next. Null when there is too little history.
+     * @nullable
+     */
+  focus: SkillReportFocus;
+  recommendations: SkillRecommendation[];
+  /**
+     * Arabic advice sentence. Null unless advice=true was asked for and the AI task is available.
+     * @nullable
+     */
+  advice: string | null;
+  /** True when there is too little history to say anything useful. Show nothing rather than manufacturing a weakness from three answers. */
+  insufficientEvidence: boolean;
+}
+
+export interface ConversationStartInput {
+  lessonId: number;
+  /**
+     * The conversation block to take the prompt and caps from.
+     * @nullable
+     */
+  blockId?: number | null;
+}
+
+export interface ConversationStart {
+  sessionId: number;
+  /** The tutor's opening line. Show it as the first message. */
+  greeting: string;
+  maxTurns: number;
+  maxMinutes: number;
+  /** Words from the lesson the student is being nudged to use. */
+  targetVocabulary: string[];
+}
+
+/**
+ * Send exactly one of `message` or `mediaId`.
+ */
+export interface ConversationTurnInput {
+  /**
+     * What the student typed.
+     * @minLength 1
+     * @maxLength 2000
+     */
+  message?: string;
+  /** A ready media_assets id, when the student spoke instead. The server transcribes it and answers what was actually said. */
+  mediaId?: number;
+}
+
+export interface ConversationTurn {
+  reply: string;
+  /**
+     * What the recogniser heard, when the turn was spoken. Null for a typed turn.
+     * @nullable
+     */
+  transcript: string | null;
+  turnsUsed: number;
+  turnsRemaining: number;
+  minutesRemaining: number;
+  /** Target words the student has used so far. */
+  vocabularyUsed: string[];
+  /** True when this turn hit a cap and the session is now closed. */
+  ended: boolean;
+}
+
+export interface ConversationMessage {
+  role: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ActiveConversation {
+  sessionId: number;
+  /** @nullable */
+  lessonId: number | null;
+  /** The exchange so far, oldest first. */
+  turns: ConversationMessage[];
+  turnsUsed: number;
+  turnsRemaining: number;
+  minutesRemaining: number;
+  vocabularyUsed: string[];
+}
+
+export interface ActiveConversationResponse {
+  session: ActiveConversation | null;
+}
+
+export interface ConversationEnded {
+  ended: boolean;
+}
+
+export interface PracticePreferences {
+  /** The opt-in to the feature. Matching never considers a student without it. */
+  isAvailable: boolean;
+  goals: string[];
+  interests: string[];
+  /** @nullable */
+  professionalField: string | null;
+  /** Hours of the day in UTC (0-23) the student is likely to be around. */
+  availableHours: number[];
+}
+
+export interface PracticePreferencesInput {
+  isAvailable: boolean;
+  /**
+     * At most 10 tags, each at most 40 characters. Defaults to empty.
+     * @maxItems 10
+     * @items.maxLength 40
+     */
+  goals?: string[];
+  /**
+     * At most 10 tags, each at most 40 characters. Defaults to empty.
+     * @maxItems 10
+     * @items.maxLength 40
+     */
+  interests?: string[];
+  /**
+     * @maxLength 40
+     * @nullable
+     */
+  professionalField?: string | null;
+  /**
+     * @maxItems 24
+     * @items.minimum 0
+     * @items.maximum 23
+     */
+  availableHours?: number[];
+}
+
+export interface PracticeLimits {
+  dailyCallLimit: number;
+  /** The server ends a call at this length. */
+  maxCallMinutes: number;
+  /** How long a proposed call rings before it counts as unanswered. */
+  ringTimeoutMs: number;
+  connectTimeoutMs: number;
+}
+
+export interface PracticeProfileResponse {
+  /** Null until the student has opted in once. */
+  profile: PracticePreferences | null;
+  limits: PracticeLimits;
+}
+
+export interface PracticeProfileSaved {
+  profile: PracticePreferences;
+}
+
+export interface PracticePartner {
+  userId: number;
+  name: string;
+  /** @nullable */
+  levelCode: string | null;
+  interests: string[];
+  /** @nullable */
+  professionalField: string | null;
+}
+
+export type PracticeSessionViewStatus = typeof PracticeSessionViewStatus[keyof typeof PracticeSessionViewStatus];
+
+
+export const PracticeSessionViewStatus = {
+  waiting: 'waiting',
+  active: 'active',
+  ended: 'ended',
+  declined: 'declined',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PracticeSessionViewEndReason = typeof PracticeSessionViewEndReason[keyof typeof PracticeSessionViewEndReason] | null;
+
+
+export const PracticeSessionViewEndReason = {
+  ended_by_user: 'ended_by_user',
+  blocked: 'blocked',
+  timeout: 'timeout',
+  not_answered: 'not_answered',
+  connection_failed: 'connection_failed',
+  declined: 'declined',
+} as const;
+
+export interface PracticeSessionView {
+  sessionId: number;
+  status: PracticeSessionViewStatus;
+  /** True when this student's side makes the WebRTC offer. */
+  isCaller: boolean;
+  partner: PracticePartner;
+  /**
+     * What the matcher scored this pair, kept so a bad match can be explained.
+     * @nullable
+     */
+  matchScore: number | null;
+  /**
+     * Set when the partner accepts, not when the pair is proposed.
+     * @nullable
+     */
+  startedAt: string | null;
+  /**
+     * Seconds left before the server ends the call.
+     * @nullable
+     */
+  secondsRemaining: number | null;
+  /** @nullable */
+  endReason: PracticeSessionViewEndReason;
+}
+
+export interface PracticeSessionResponse {
+  session: PracticeSessionView;
+}
+
+export interface PracticeQueueResult {
+  /** The pairing, when one was found straight away. */
+  session: PracticeSessionView | null;
+  /** How many other students are waiting, so an empty pool looks empty. */
+  waiting: number;
+}
+
+export interface PracticeStatus {
+  session: PracticeSessionView | null;
+  /** True while this student is in the pool waiting for someone. */
+  queued: boolean;
+  waiting: number;
+  secondsWaiting: number;
+}
+
+/**
+ * Defaults to ended_by_user. A still-ringing call ended this way is recorded as declined.
+ */
+export type PracticeEndInputReason = typeof PracticeEndInputReason[keyof typeof PracticeEndInputReason];
+
+
+export const PracticeEndInputReason = {
+  ended_by_user: 'ended_by_user',
+  declined: 'declined',
+  connection_failed: 'connection_failed',
+} as const;
+
+export interface PracticeEndInput {
+  /** Defaults to ended_by_user. A still-ringing call ended this way is recorded as declined. */
+  reason?: PracticeEndInputReason;
+}
+
+export interface PracticeIceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface PracticeIceServers {
+  iceServers: PracticeIceServer[];
+  /** False means STUN only, and roughly one connection in five will not establish. Say so rather than sitting on "connecting…". */
+  hasTurn: boolean;
+  connectTimeoutMs: number;
+}
+
+export type PracticeSignalInputKind = typeof PracticeSignalInputKind[keyof typeof PracticeSignalInputKind];
+
+
+export const PracticeSignalInputKind = {
+  offer: 'offer',
+  answer: 'answer',
+  ice: 'ice',
+  bye: 'bye',
+} as const;
+
+export interface PracticeSignalInput {
+  kind: PracticeSignalInputKind;
+  /** The SDP or ICE candidate. Opaque to the server, which only carries it. */
+  payload?: unknown;
+}
+
+export type PracticeSignalKind = typeof PracticeSignalKind[keyof typeof PracticeSignalKind];
+
+
+export const PracticeSignalKind = {
+  offer: 'offer',
+  answer: 'answer',
+  ice: 'ice',
+  bye: 'bye',
+} as const;
+
+export interface PracticeSignal {
+  /** The cursor. Pass the highest id seen as `after` on the next read. */
+  id: number;
+  kind: PracticeSignalKind;
+  /** The SDP or ICE candidate, as the other side sent it. */
+  payload: unknown;
+  createdAt: string;
+}
+
+export interface PracticeSignalsResponse {
+  signals: PracticeSignal[];
+}
+
+export interface PracticeBlockInput {
+  /** The student to block. */
+  userId: number;
+  /**
+     * The call it happened in, for an administrator reading a report.
+     * @nullable
+     */
+  sessionId?: number | null;
+}
+
+export interface PracticeBlockEntry {
+  userId: number;
+  name: string;
+  createdAt: string;
+}
+
+export interface PracticeBlocksResponse {
+  blocks: PracticeBlockEntry[];
+}
+
+export type PracticeReportInputReason = typeof PracticeReportInputReason[keyof typeof PracticeReportInputReason];
+
+
+export const PracticeReportInputReason = {
+  harassment: 'harassment',
+  inappropriate: 'inappropriate',
+  spam: 'spam',
+  language: 'language',
+  other: 'other',
+} as const;
+
+export interface PracticeReportInput {
+  /** The student being reported. */
+  userId: number;
+  /** @nullable */
+  sessionId?: number | null;
+  reason: PracticeReportInputReason;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  detail?: string | null;
+  /** Defaults to true — reporting someone almost always means not wanting to meet them again. */
+  alsoBlock?: boolean;
+}
+
+export interface PracticeReportCreated {
+  reportId: number;
+}
+
+export interface PracticeCall {
+  sessionId: number;
+  partnerId: number;
+  partnerName: string;
+  /**
+     * Null when the call was never answered.
+     * @nullable
+     */
+  startedAt: string | null;
+  /** @nullable */
+  durationSeconds: number | null;
+  /** @nullable */
+  endReason: string | null;
+}
+
+export interface PracticeHistoryResponse {
+  calls: PracticeCall[];
+}
+
 export type GetLessonsParams = {
 levelId?: number;
 };
@@ -966,5 +1994,27 @@ levelId?: number;
 export type GetAdminStudentsParams = {
 page?: number;
 limit?: number;
+};
+
+export type GetSkillReportParams = {
+/**
+ * Pass "true" to also ask for the Arabic advice sentence.
+ */
+advice?: GetSkillReportAdvice;
+};
+
+export type GetSkillReportAdvice = typeof GetSkillReportAdvice[keyof typeof GetSkillReportAdvice];
+
+
+export const GetSkillReportAdvice = {
+  true: 'true',
+  false: 'false',
+} as const;
+
+export type ReadPracticeSignalsParams = {
+/**
+ * Return only signals with an id greater than this. Defaults to 0.
+ */
+after?: number;
 };
 
