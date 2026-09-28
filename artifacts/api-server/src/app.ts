@@ -96,6 +96,9 @@ app.use(
       pool,
       tableName: "session",
       createTableIfMissing: true,
+      // Seconds between expired-session cleanups. The 15-minute default wakes a
+      // scale-to-zero database (Neon free tier) around the clock; raise it there.
+      pruneSessionInterval: parseInt(process.env.SESSION_PRUNE_INTERVAL_S ?? "900", 10),
     }),
     secret: process.env.SESSION_SECRET ?? "ascension-dev-secret",
     resave: false,

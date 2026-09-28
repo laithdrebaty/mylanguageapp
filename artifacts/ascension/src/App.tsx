@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { ProtectedRoute } from '@/components/protected-route';
+import { ServerWakeBanner } from '@/components/server-wake-banner';
 
 import Landing from '@/pages/landing';
 import Login from '@/pages/login';
@@ -115,6 +116,7 @@ function App() {
           <Router />
         </WouterRouter>
         <Toaster />
+        <ServerWakeBanner />
       </TooltipProvider>
     </QueryClientProvider>
   );
