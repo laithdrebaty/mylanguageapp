@@ -22,11 +22,15 @@ services:
         value: "24"
       - key: NODE_ENV
         value: production
-      # Two proxies sit in front of the app: Vercel's /api rewrite, then Render's
-      # load balancer. With 1, every user would share Vercel's IP and therefore
-      # one rate-limit bucket (200 requests / 15 min for the whole site).
+      # Hops between the browser and the app, each appending to X-Forwarded-For:
+      # Vercel's /api rewrite, then Render's own three (Cloudflare, a middle hop,
+      # a private Render address). Measured on the live service: at 2, the rate
+      # limiter keyed every request by a Cloudflare edge IP, so users shared buckets.
+      # Known gap: a client calling the onrender.com URL directly, with a forged
+      # X-Forwarded-For, can choose the IP it is limited as. Closing it needs a
+      # secret header only the Vercel proxy adds (Vercel Routing Middleware).
       - key: TRUST_PROXY
-        value: "2"
+        value: "4"
       - key: LOG_LEVEL
         value: info
       - key: JOB_QUEUE
