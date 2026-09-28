@@ -55,7 +55,10 @@ function pushDrizzleSchema() {
       '--force',
       '--dialect=postgresql',
       '--schema=./src/schema/index.ts',
-      `--url=${databaseUrl}`,
+      // Quoted for cmd.exe, which the win32 shell below goes through: hosted
+      // URLs carry query strings (Neon: ?sslmode=require&channel_binding=...)
+      // and an unquoted & would end the command there.
+      process.platform === 'win32' ? `"--url=${databaseUrl}"` : `--url=${databaseUrl}`,
     ],
     {
       cwd: root,

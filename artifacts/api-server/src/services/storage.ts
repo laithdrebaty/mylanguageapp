@@ -177,6 +177,11 @@ class S3StorageProvider implements StorageProvider {
       // MinIO and some Spaces setups serve buckets as a path segment rather
       // than a subdomain. R2 and AWS do not.
       forcePathStyle: config.forcePathStyle,
+      // Recent SDKs add CRC32 checksums to every request by default, including
+      // presigned browser uploads. Not every S3-compatible provider (Backblaze
+      // B2, older MinIO) accepts them, so send them only where S3 requires one.
+      requestChecksumCalculation: "WHEN_REQUIRED" as const,
+      responseChecksumValidation: "WHEN_REQUIRED" as const,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,

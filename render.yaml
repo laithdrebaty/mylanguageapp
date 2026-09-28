@@ -1,0 +1,81 @@
+# Render Blueprint for the API on Render's free plan.
+# Render dashboard → New → Blueprint → pick this repo. Render reads this file,
+# generates the two secrets itself, and asks for every `sync: false` value.
+# See docs/DEPLOY-FREE.md for the full walkthrough.
+services:
+  - type: web
+    name: ascension-api
+    runtime: node
+    plan: free
+    # Keep this in the same region as the Neon database; every query crosses it.
+    region: frankfurt
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      # Two proxies sit in front of the app: Vercel's /api rewrite, then Render's
+      # load balancer. With 1, every user would share Vercel's IP and therefore
+      # one rate-limit bucket (200 requests / 15 min for the whole site).
+      - key: TRUST_PROXY
+        value: "2"
+      - key: LOG_LEVEL
+        value: info
+      - key: JOB_QUEUE
+        value: memory
+
+      # Generated once by Render and kept across deploys. Never change
+      # AI_CONFIG_SECRET afterwards: the AI keys stored with it become unreadable.
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: AI_CONFIG_SECRET
+        generateValue: true
+
+      # Asked for when the Blueprint is created.
+      # First administrator, created on first start. Left unset, it falls back
+      # to admin@example.com / admin@1234 — on a public URL. Password: 8+ chars,
+      # at least one letter and one number.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DATABASE_URL        # Neon connection string
+        sync: false
+      - key: REDIS_URL           # Redis Cloud URL
+        sync: false
+      - key: ALLOWED_ORIGIN      # https://<your-app>.vercel.app
+        sync: false
+
+      # Media storage for voice recordings — OPTIONAL. Leave all five blank to
+      # run without it: everything works except recording upload/playback (503).
+      # Backblaze B2 (10 GB free, no card needed):
+      #   STORAGE_ENDPOINT  https://s3.<region>.backblazeb2.com
+      #   STORAGE_REGION    <region>, e.g. eu-central-003 (from the bucket page)
+      - key: STORAGE_BUCKET
+        sync: false
+      - key: STORAGE_ENDPOINT
+        sync: false
+      - key: STORAGE_REGION
+        sync: false
+      - key: STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_FORCE_PATH_STYLE
+        value: "false"
+
+      # Let a scale-to-zero database (Neon free) actually sleep: no idle pool
+      # connections, and background jobs that touch the database run hourly or
+      # less instead of every 10–15 minutes.
+      - key: DB_POOL_MIN
+        value: "0"
+      - key: DB_POOL_MAX
+        value: "5"
+      - key: GRADING_SWEEP_INTERVAL_MS
+        value: "3600000"
+      - key: SESSION_PRUNE_INTERVAL_S
+        value: "21600"

@@ -11,7 +11,7 @@ import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
 import helmet from "helmet";
 import compression from "compression";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { RedisStore, type SendCommandFn } from "rate-limit-redis";
 import router from "./routes";
 import docsRouter from "./routes/docs";
@@ -96,6 +96,9 @@ app.use(
       pool,
       tableName: "session",
       createTableIfMissing: true,
+      // Seconds between expired-session cleanups. The 15-minute default wakes a
+      // scale-to-zero database (Neon free tier) around the clock; raise it there.
+      pruneSessionInterval: parseInt(process.env.SESSION_PRUNE_INTERVAL_S ?? "900", 10),
     }),
     secret: process.env.SESSION_SECRET ?? "ascension-dev-secret",
     resave: false,
@@ -164,6 +167,24 @@ function failOpen(limiter: RequestHandler): RequestHandler {
   };
 }
 
+// Voice practice polls once a second for as long as a student is queued or in
+// a call — ~900 requests per window on its own, which under the broad limit
+// below would cut every call off after about three minutes. It gets its own
+// budget instead, keyed by the signed-in user so classmates behind one school
+// or mobile-carrier NAT do not share it.
+const PRACTICE_POLL_PATH = "/practice/poll";
+
+const practicePollLimiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10),
+  limit: parseInt(process.env.RATE_LIMIT_PRACTICE_POLL ?? "1200", 10),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: makeRedisStore("rl:poll:"),
+  keyGenerator: (req) =>
+    req.session?.userId ? `user:${req.session.userId}` : ipKeyGenerator(req.ip ?? ""),
+  message: { error: "Too many requests, please try again later" },
+});
+
 // Broad limit: all API endpoints — protects against general abuse
 const apiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10), // 15 min
@@ -171,6 +192,8 @@ const apiLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   store: makeRedisStore("rl:api:"),
+  // Relative to the /api mount below. Limited by practicePollLimiter instead.
+  skip: (req) => req.path === PRACTICE_POLL_PATH,
   message: { error: "Too many requests, please try again later" },
 });
 
@@ -186,6 +209,7 @@ const authLimiter = rateLimit({
 });
 
 app.use("/api", failOpen(apiLimiter));
+app.use(`/api${PRACTICE_POLL_PATH}`, failOpen(practicePollLimiter));
 app.use("/api/auth/login", failOpen(authLimiter));
 app.use("/api/auth/register", failOpen(authLimiter));
 
