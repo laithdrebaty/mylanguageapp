@@ -132,13 +132,78 @@ app.use(
  * first moments after a restart — and every request during a Redis blip —
  * answers 500 rather than being allowed through. Hence `failOpen` below.
  */
+type RedisClient = InstanceType<typeof import("ioredis").default>;
+
+/** Resolves once the client is connected; rejects after `timeoutMs`. */
+function redisReady(client: RedisClient, timeoutMs: number): Promise<void> {
+  if (client.status === "ready") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const onReady = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      client.off("ready", onReady);
+      reject(new Error("Redis not ready"));
+    }, timeoutMs);
+    client.once("ready", onReady);
+  });
+}
+
+/**
+ * rate-limit-redis loads its Lua scripts once, in init(), and every later call
+ * awaits that same promise. init() runs when this module is imported — before
+ * the lazily connected client is up — so the load failed, every increment
+ * rejected with it, and failOpen let every request through: rate limiting,
+ * login brute-force protection included, was silently off from the first boot.
+ *
+ * Two fixes. Script loads wait for the connection (only they do; ordinary
+ * commands still fail fast, so a Redis outage never adds latency). And if a
+ * call fails anyway — Redis was down at boot, or restarted and lost its script
+ * cache — the scripts are reloaded in the background for the next request.
+ */
+class RecoveringRedisStore extends RedisStore {
+  private reloading = false;
+
+  override async increment(key: string) {
+    try {
+      return await super.increment(key);
+    } catch (err) {
+      this.reloadScripts();
+      throw err;
+    }
+  }
+
+  override async get(key: string) {
+    try {
+      return await super.get(key);
+    } catch (err) {
+      this.reloadScripts();
+      throw err;
+    }
+  }
+
+  private reloadScripts() {
+    if (this.reloading) return;
+    this.reloading = true;
+    this.init({ windowMs: this.windowMs } as Parameters<RedisStore["init"]>[0])
+      .catch(() => {})
+      .finally(() => {
+        this.reloading = false;
+      });
+  }
+}
+
 function makeRedisStore(prefix: string): RedisStore | undefined {
   if (!redis) return undefined;
-  return new RedisStore({
+  const client = redis as RedisClient;
+  return new RecoveringRedisStore({
     prefix,
     // ioredis call() is the raw Redis command interface
-    sendCommand: ((...args: string[]) =>
-      (redis as InstanceType<typeof import("ioredis").default>).call(args[0], ...args.slice(1))) as SendCommandFn,
+    sendCommand: (async (...args: string[]) => {
+      if (args[0] === "SCRIPT") await redisReady(client, 10_000);
+      return client.call(args[0], ...args.slice(1));
+    }) as SendCommandFn,
   });
 }
 
