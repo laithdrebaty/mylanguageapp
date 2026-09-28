@@ -9,7 +9,11 @@ services:
     plan: free
     # Keep this in the same region as the Neon database; every query crosses it.
     region: frankfurt
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    # npx rather than `corepack enable`: Render ships its own pnpm in a read-only
+    # /usr/bin, which corepack tries (and fails) to replace. --prod=false because
+    # NODE_ENV=production below would otherwise skip devDependencies, and the
+    # bundler (esbuild) is one.
+    buildCommand: npx --yes pnpm@10.5.2 install --frozen-lockfile --prod=false && npx --yes pnpm@10.5.2 --filter @workspace/api-server run build
     startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/healthz
     autoDeploy: true
