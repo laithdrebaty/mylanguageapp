@@ -161,7 +161,7 @@ in production:
 
 | Area | What is missing |
 |---|---|
-| Payment | No activation path exists; every subscription is stranded at `pending_payment`. See [payment-methods-research.md](payment-methods-research.md). |
+| Payment | No activation path exists; every subscription is stranded at `pending_payment`. Neither ShamCash nor TRC-20 USDT offers webhooks, so confirmation has to be a manual admin step. |
 | Paywall | `subscription_plans.lessonsAccess` is read by no route — every student has full access regardless of plan. |
 | Email | No provider configured, so there is no password reset. A forgotten password is permanent account loss. |
 | Session roles | `req.session.role` is copied at login and never rechecked on a 30-day cookie, so a demotion or ban takes up to a month to take effect. |
