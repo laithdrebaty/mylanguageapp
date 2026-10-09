@@ -64,6 +64,8 @@ export interface StudentQuizBlock {
   contentAr: string | null;
   prompt: string | null;
   promptAr: string | null;
+  /** The block's own media — the clip to hear, or the image to describe. */
+  referenceMediaId?: number | null;
   config: {
     options?: Array<{ id: string; text: string; textAr: string | null }>;
     minWords?: number;
