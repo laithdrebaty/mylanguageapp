@@ -162,7 +162,33 @@ export interface QuizAttemptReview {
   >;
 }
 
+/** One row of the student's quiz list, with their own attempt history folded in. */
+export interface QuizListItem {
+  id: number;
+  title: string;
+  titleAr: string;
+  description: string | null;
+  descriptionAr: string | null;
+  /** practice | level_evaluation — an evaluation is a gate, not a free practice. */
+  kind: string;
+  levelId: number | null;
+  timeLimitSec: number | null;
+  maxAttempts: number | null;
+  passingScore: number;
+  xpReward: number;
+  attemptsUsed: number;
+  /** Null when the quiz allows unlimited attempts. */
+  attemptsRemaining: number | null;
+  bestScore: number | null;
+  passed: boolean;
+  /** Set when an attempt is already open — resume rather than start a new one. */
+  activeAttemptId: number | null;
+}
+
 // ─── Calls ────────────────────────────────────────────────────────────────────
+
+export const listQuizzes = () =>
+  request<{ quizzes: QuizListItem[] }>("GET", "/quizzes");
 
 export const getQuiz = (quizId: number) => request<StudentQuiz>("GET", `/quizzes/${quizId}`);
 
