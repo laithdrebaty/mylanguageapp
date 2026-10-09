@@ -177,24 +177,19 @@ class S3StorageProvider implements StorageProvider {
       // MinIO and some Spaces setups serve buckets as a path segment rather
       // than a subdomain. R2 and AWS do not.
       forcePathStyle: config.forcePathStyle,
-      // Recent SDKs add CRC32 checksums to every request by default, including
-      // presigned browser uploads. Not every S3-compatible provider (Backblaze
-      // B2, older MinIO) accepts them, so send them only where S3 requires one.
+      // Recent SDKs add a CRC32 checksum to every PutObject by default. For a
+      // PRESIGNED upload that is computed over an empty body — the bytes are
+      // not here — and baked into the URL as x-amz-checksum-crc32=AAAAAA==.
+      // The browser then PUTs the real file and any provider that verifies the
+      // checksum (SeaweedFS, MinIO, R2, Backblaze B2) rejects it:
+      //   "checksum mismatch: expected AAAAAA==, got eB6jKg=="
+      // WHEN_REQUIRED leaves the checksum off unless the operation demands one.
       requestChecksumCalculation: "WHEN_REQUIRED" as const,
       responseChecksumValidation: "WHEN_REQUIRED" as const,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
-      // AWS SDK v3.729+ adds a CRC32 checksum to every PutObject by default.
-      // For a PRESIGNED upload that is computed over an empty body — the bytes
-      // are not here — and baked into the URL as x-amz-checksum-crc32=AAAAAA==.
-      // The browser then PUTs the real file and any S3 implementation that
-      // verifies the checksum (SeaweedFS, MinIO, R2) rejects it:
-      //   "checksum mismatch: expected AAAAAA==, got eB6jKg=="
-      // WHEN_REQUIRED leaves the checksum off unless the operation demands one.
-      requestChecksumCalculation: "WHEN_REQUIRED" as const,
-      responseChecksumValidation: "WHEN_REQUIRED" as const,
     };
 
     this.client = new S3Client({ ...base, endpoint: config.endpoint });
