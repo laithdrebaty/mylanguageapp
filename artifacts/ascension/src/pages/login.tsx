@@ -101,6 +101,12 @@ export default function Login() {
                 )}
               />
 
+              <div className="text-left">
+                <Link href="/forgot-password" className="text-sm text-amber-600 hover:text-amber-500">
+                  نسيت كلمة المرور؟
+                </Link>
+              </div>
+
               <Button 
                 type="submit" 
                 className="w-full h-12 text-lg rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground"

@@ -17,6 +17,7 @@ import Learn from '@/pages/learn';
 import Level from '@/pages/level';
 import Lesson from '@/pages/lesson';
 import Quiz from '@/pages/quiz';
+import { ForgotPassword, ResetPassword } from '@/pages/password-reset';
 import Vocabulary from '@/pages/vocabulary';
 import Practice from '@/pages/practice';
 import Subscription from '@/pages/subscription';
@@ -60,6 +61,8 @@ function Router() {
         <Route path="/" component={Landing} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
 
         {/* Student routes */}
         <ProtectedRoute path="/dashboard" component={Dashboard} />

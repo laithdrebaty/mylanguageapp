@@ -277,6 +277,10 @@ app.use("/api", failOpen(apiLimiter));
 app.use(`/api${PRACTICE_POLL_PATH}`, failOpen(practicePollLimiter));
 app.use("/api/auth/login", failOpen(authLimiter));
 app.use("/api/auth/register", failOpen(authLimiter));
+// Reset endpoints are brute-force targets: one guesses tokens, the other can be
+// used to probe which addresses are registered.
+app.use("/api/auth/forgot-password", failOpen(authLimiter));
+app.use("/api/auth/reset-password", failOpen(authLimiter));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api", router);
