@@ -121,9 +121,49 @@ Prefer a zero-egress provider for video. R2 charges nothing for egress; S3
 charges roughly $0.09/GB, which at 100 users streaming video would cost more
 per month than everything else combined.
 
+### `STORAGE_PUBLIC_ENDPOINT` — the address the *browser* uses
+
+Presigned uploads are signed with SigV4, which covers the `Host` header, so a
+URL rewritten after signing fails its own signature. The URL has to be signed
+for the address the browser will actually call.
+
+- **R2 / Spaces** — leave unset; the API and the browser use the same host.
+- **Self-hosted storage behind a different hostname** — set it to the public one.
+
+Wrong or unset, every upload fails in the browser with a bare "Failed to fetch"
+and nothing appears in the API logs.
+
+Set **CORS on the bucket** to allow `PUT` from the web origin. The browser
+uploads directly, so without it the browser blocks every upload.
+
+### HTTPS is required for recording
+
+`navigator.mediaDevices.getUserMedia` does not exist on a non-secure origin —
+the API is absent, so there is no permission prompt to accept. Served over plain
+HTTP at an IP address, pronunciation blocks, speaking blocks and the CMS media
+recorder all cannot record. `localhost` is the only exception, which is why this
+does not show up in local development.
+
+So the deployed frontend and API must both be HTTPS, or two of the product's
+headline features do not work at all.
+
 ## Alternative: everything on one host
 
 If the split is not worth the operational overhead, deploy the whole thing to a
 single container host and serve the built frontend as static files from Express.
 That needs a small addition to `app.ts` (an `express.static` mount plus an
 SPA fallback), and drops Vercel from the picture entirely.
+
+## Known gaps before a production launch
+
+Not deployment configuration, but things that are unfinished and will be noticed
+in production:
+
+| Area | What is missing |
+|---|---|
+| Payment | No activation path exists; every subscription is stranded at `pending_payment`. See [payment-methods-research.md](payment-methods-research.md). |
+| Paywall | `subscription_plans.lessonsAccess` is read by no route — every student has full access regardless of plan. |
+| Email | No provider configured, so there is no password reset. A forgotten password is permanent account loss. |
+| Session roles | `req.session.role` is copied at login and never rechecked on a 30-day cookie, so a demotion or ban takes up to a month to take effect. |
+| TURN | `PRACTICE_TURN_URLS` is empty, so voice practice is STUN-only and roughly one call in five will not connect. |
+| AI | No provider configured. Speaking and pronunciation submissions stay `pending` and fall to the human marking queue at `/cms/grading` — correct behaviour, but nothing alerts when that queue grows. |
