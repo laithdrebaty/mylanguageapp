@@ -119,6 +119,8 @@ services:
       # Override in .env wherever the browser does not reach the host as
       # localhost.
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
+      # Where a password-reset link should point: the address students use.
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
     ports:
       - '8080:8080'
     depends_on:
@@ -139,7 +141,7 @@ services:
       PORT: '5173'
       BASE_PATH: /
       # The app calls relative /api paths; Vite proxies them to the api service.
-      API_PROXY_TARGET: http://api:8080
+      API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:8080}
       # Host file events do not reach the container through a bind mount on
       # Windows/macOS; poll instead so hot reload works.
       VITE_USE_POLLING: '1'
