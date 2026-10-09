@@ -39,7 +39,11 @@ const router: IRouter = Router();
 // Requires student session; returns lessons in the student's curriculum
 // with authoritative state values.
 
-router.get("/lessons", requireStudent, async (req, res): Promise<void> => {
+// requireAuth, not requireStudent: reading the curriculum is not a student-only
+// action. An admin or content manager following the app's own navigation hits
+// this, and refusing them left the level page listing no lessons at all. The
+// write endpoints below stay student-only — an admin has no progress to record.
+router.get("/lessons", requireAuth, async (req, res): Promise<void> => {
   const userId = req.session.userId!;
   const levelId = req.query.levelId ? parseInt(req.query.levelId as string, 10) : undefined;
 
@@ -326,7 +330,8 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
 
 // ─── GET /lessons/:lessonId ───────────────────────────────────────────────────
 
-router.get("/lessons/:lessonId", requireStudent, async (req, res): Promise<void> => {
+// Reading one lesson, like listing them, is not student-only — see GET /lessons.
+router.get("/lessons/:lessonId", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
   if (isNaN(lessonId)) {
