@@ -24,6 +24,8 @@ export default function Placement() {
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  /** Written questions submit responseText, not a selectedOptionId. */
+  const [writtenAnswers, setWrittenAnswers] = useState<Record<number, string>>({});
   const [result, setResult] = useState<PlacementTestResult | null>(null);
 
   if (isLoading) {
@@ -129,6 +131,11 @@ export default function Placement() {
   }
 
   const question = test.questions[currentIndex];
+  // Written questions carry no options; the server scores them separately.
+  const isWritten =
+    (question as { type?: string }).type === "written" ||
+    !question.options ||
+    question.options.length === 0;
   const isLast = currentIndex === test.questions.length - 1;
   const progress = ((currentIndex + 1) / test.questions.length) * 100;
 
@@ -137,11 +144,20 @@ export default function Placement() {
   };
 
   const handleSubmit = () => {
-    const formattedAnswers = Object.entries(answers)
-      .map(([qId, oId]) => ({
-        questionId: parseInt(qId, 10),
-        selectedOptionId: oId,
-      }));
+    const formattedAnswers: Array<{
+      questionId: number;
+      selectedOptionId?: string;
+      responseText?: string;
+    }> = Object.entries(answers).map(([qId, oId]) => ({
+      questionId: parseInt(qId, 10),
+      selectedOptionId: oId,
+    }));
+
+    // Blank written answers are omitted; the server treats them as unanswered.
+    for (const [qId, text] of Object.entries(writtenAnswers)) {
+      if (text.trim().length === 0) continue;
+      formattedAnswers.push({ questionId: parseInt(qId, 10), responseText: text.trim() });
+    }
 
     submitTest.mutate(
       { data: { answers: formattedAnswers } },
@@ -204,6 +220,24 @@ export default function Placement() {
             </div>
           )}
 
+          {/* Without this a written question is unanswerable — it has no options. */}
+          {isWritten ? (
+            <div className="space-y-2" dir="ltr">
+              <textarea
+                value={writtenAnswers[question.id] ?? ""}
+                onChange={e =>
+                  setWrittenAnswers(prev => ({ ...prev, [question.id]: e.target.value }))
+                }
+                rows={6}
+                maxLength={4000}
+                placeholder="Write your answer in English…"
+                className="w-full rounded-xl border-2 border-border bg-card p-4 text-base leading-relaxed text-foreground focus:border-primary focus:outline-none"
+              />
+              <div className="text-xs text-muted-foreground text-right" dir="rtl">
+                {(writtenAnswers[question.id] ?? "").trim().length} / 4000
+              </div>
+            </div>
+          ) : (
           <div className="space-y-3" dir="ltr">
             {question.options.map(option => (
               <button
@@ -224,15 +258,18 @@ export default function Placement() {
               </button>
             ))}
           </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Controls */}
       <div className="flex justify-between items-center mt-4">
+        {/* Outlined, not ghost: as plain text this read as a label, not a control. */}
         <Button
-          variant="ghost"
+          variant="outline"
+          size="lg"
           onClick={handleSkip}
-          className="text-muted-foreground"
+          className="h-12 px-6 rounded-xl border-2"
           disabled={submitTest.isPending}
         >
           لا أعرف الإجابة (تخطي)
@@ -242,7 +279,12 @@ export default function Placement() {
           onClick={handleNext}
           size="lg"
           className="h-12 px-8 rounded-xl"
-          disabled={submitTest.isPending || !answers[question.id]}
+          disabled={
+            submitTest.isPending ||
+            (isWritten
+              ? (writtenAnswers[question.id] ?? "").trim().length === 0
+              : !answers[question.id])
+          }
         >
           {submitTest.isPending ? (
             <Loader2 className="h-5 w-5 animate-spin" />
