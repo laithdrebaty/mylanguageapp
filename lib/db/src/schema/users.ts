@@ -21,6 +21,10 @@ export const usersTable = pgTable("users", {
   }).notNull().default("student"),
   preferredLanguage: text("preferred_language", { enum: ["ar", "en"] }).notNull().default("ar"),
   country: text("country").notNull().default("SY"),
+  /** How the student heard about the app. Asked at signup; drives the admin referral report. */
+  referralSource: text("referral_source"),
+  /** Free text when referralSource is "other" — kept separate so the enum stays reportable. */
+  referralDetail: text("referral_detail"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

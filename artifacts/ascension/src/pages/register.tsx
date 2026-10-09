@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useRegister, RegisterInputPreferredLanguage } from "@workspace/api-client-react";
+import { useRegister, RegisterInputPreferredLanguage, RegisterInputReferralSource } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
@@ -11,6 +11,20 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { BookOpen, Loader2, Eye, EyeOff } from "lucide-react";
+
+/** Arabic labels for the signup referral question. */
+const REFERRAL_LABELS: Array<{ value: RegisterInputReferralSource; label: string }> = [
+  { value: RegisterInputReferralSource.facebook, label: "فيسبوك" },
+  { value: RegisterInputReferralSource.instagram, label: "إنستغرام" },
+  { value: RegisterInputReferralSource.tiktok, label: "تيك توك" },
+  { value: RegisterInputReferralSource.youtube, label: "يوتيوب" },
+  { value: RegisterInputReferralSource.whatsapp, label: "واتساب" },
+  { value: RegisterInputReferralSource.friend, label: "صديق أو قريب" },
+  { value: RegisterInputReferralSource.search, label: "بحث في الإنترنت" },
+  { value: RegisterInputReferralSource.advertisement, label: "إعلان" },
+  { value: RegisterInputReferralSource.other, label: "أخرى" },
+];
+
 
 // Keep this in sync with the weak-password list in artifacts/api-server/src/lib/validate.ts
 // so the browser catches the same obviously-weak passwords before hitting the server.
@@ -43,6 +57,10 @@ const formSchema = z.object({
   confirmPassword: z.string().min(1, { message: "الرجاء تأكيد كلمة المرور" }),
   preferredLanguage: z.nativeEnum(RegisterInputPreferredLanguage).default(RegisterInputPreferredLanguage.ar),
   country: z.string().length(2).default("SY"),
+  referralSource: z.nativeEnum(RegisterInputReferralSource, {
+    errorMap: () => ({ message: "الرجاء اختيار كيف تعرفت على التطبيق" }),
+  }),
+  referralDetail: z.string().max(200).optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "كلمتا المرور غير متطابقتين",
   path: ["confirmPassword"],
@@ -262,8 +280,48 @@ export default function Register() {
                 />
               </div>
 
-              <Button 
-                type="submit" 
+              <FormField
+                control={form.control}
+                name="referralSource"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>كيف تعرفت على التطبيق؟ *</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="اختر" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {REFERRAL_LABELS.map(({ value, label }) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Only "other" has anything to add — the rest are self-describing. */}
+              {form.watch("referralSource") === RegisterInputReferralSource.other && (
+                <FormField
+                  control={form.control}
+                  name="referralDetail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>كيف؟</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value ?? ""} placeholder="اكتب هنا" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <Button
+                type="submit"
                 className="w-full h-12 text-lg rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground mt-4"
                 disabled={register.isPending}
               >

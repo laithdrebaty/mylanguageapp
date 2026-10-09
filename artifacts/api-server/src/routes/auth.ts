@@ -21,7 +21,7 @@ async function getDefaultCurriculumId(): Promise<number | null> {
 router.post("/auth/register", async (req, res): Promise<void> => {
   const body = validate(res, registerSchema, req.body);
   if (!body) return; // response already sent (400 with details)
-  const { name, email, password, preferredLanguage, country } = body;
+  const { name, email, password, preferredLanguage, country, referralSource, referralDetail } = body;
 
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1);
   if (existing) {
@@ -36,6 +36,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     passwordHash,
     preferredLanguage: preferredLanguage ?? "ar",
     country: country ?? "SY",
+    referralSource,
+    referralDetail: referralSource === "other" ? referralDetail ?? null : null,
     role: "student",
   }).returning();
 

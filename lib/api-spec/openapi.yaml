@@ -732,6 +732,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /admin/referrals:
+    get:
+      operationId: getAdminReferrals
+      tags: [admin]
+      summary: Signup counts per referral channel (admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralReport"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /admin/students:
     get:
       operationId: getAdminStudents
@@ -746,6 +765,11 @@ paths:
           in: query
           schema:
             type: number
+        - name: referralSource
+          in: query
+          description: Show only students who named this acquisition channel.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
@@ -2046,7 +2070,7 @@ components:
 
     RegisterInput:
       type: object
-      required: [name, email, password]
+      required: [name, email, password, referralSource]
       properties:
         name:
           type: string
@@ -2063,6 +2087,14 @@ components:
         country:
           type: string
           default: SY
+        referralSource:
+          type: string
+          description: How the student heard about the app.
+          enum: [facebook, instagram, tiktok, youtube, whatsapp, friend, search, advertisement, other]
+        referralDetail:
+          type: string
+          maxLength: 200
+          description: Free text, kept only when referralSource is "other".
 
     LoginInput:
       type: object
@@ -2091,9 +2123,33 @@ components:
           enum: [ar, en]
         country:
           type: string
+        referralSource:
+          type: string
+          nullable: true
+          description: Null for accounts created before the question was asked.
+        referralDetail:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
+
+    ReferralReport:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [source, count]
+            properties:
+              source:
+                type: string
+              count:
+                type: number
+        total:
+          type: number
 
     AuthResult:
       type: object
@@ -2217,11 +2273,6 @@ components:
         responseText:
           description: The student's written answer, for a `written` question.
           type: string
-        exerciseId:
-          description: >
-            Which question on the block is being answered. Omit on a block with
-            a single question and the server answers that one.
-          type: number
         selectedOptionId:
           type: string
 
@@ -2778,6 +2829,11 @@ components:
         clientSubmissionId:
           type: string
           minLength: 1
+        exerciseId:
+          description: >
+            Which question on the block is being answered. Omit on a block with
+            a single question and the server answers that one.
+          type: number
         selectedOptionId:
           type: string
         responseText:

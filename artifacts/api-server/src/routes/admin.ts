@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import {
   db, usersTable, studentSubscriptionsTable, lessonProgressTable,
   lessonsTable, levelsTable, studentProfilesTable, placementResultsTable,
@@ -45,23 +45,53 @@ router.get("/admin/students", requireAdmin, async (req, res): Promise<void> => {
   const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) ?? "20", 10)));
   const offset = (page - 1) * limit;
 
-  const all = await db.select().from(usersTable).where(eq(usersTable.role, "student"));
-  const total = all.length;
-  const paged = all.slice(offset, offset + limit);
+  const referralSource = (req.query.referralSource as string | undefined)?.trim();
+
+  // Paginate in SQL: this used to select every student and slice in memory.
+  const where = referralSource
+    ? and(eq(usersTable.role, "student"), eq(usersTable.referralSource, referralSource))
+    : eq(usersTable.role, "student");
+
+  const [rows, [{ count }]] = await Promise.all([
+    db.select().from(usersTable).where(where)
+      .orderBy(desc(usersTable.createdAt)).limit(limit).offset(offset),
+    db.select({ count: sql<number>`count(*)::int` }).from(usersTable).where(where),
+  ]);
 
   res.json({
-    students: paged.map((u) => ({
+    students: rows.map((u) => ({
       id: u.id,
       name: u.name,
       email: u.email,
       role: u.role,
       preferredLanguage: u.preferredLanguage,
       country: u.country,
+      referralSource: u.referralSource,
+      referralDetail: u.referralDetail,
       createdAt: u.createdAt,
     })),
-    total,
+    total: count,
     page,
     limit,
+  });
+});
+
+/** Signup counts per referral channel, for the admin dashboard. */
+router.get("/admin/referrals", requireAdmin, async (_req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      source: usersTable.referralSource,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.role, "student"))
+    .groupBy(usersTable.referralSource)
+    .orderBy(desc(sql`count(*)`));
+
+  res.json({
+    // Accounts created before the question existed report as "unknown".
+    items: rows.map((r) => ({ source: r.source ?? "unknown", count: r.count })),
+    total: rows.reduce((sum, r) => sum + r.count, 0),
   });
 });
 

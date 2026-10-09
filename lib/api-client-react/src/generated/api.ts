@@ -91,6 +91,7 @@ import type {
   QuizResponseInput,
   QuizResponseSaved,
   ReadPracticeSignalsParams,
+  ReferralReport,
   RegisterInput,
   SkillReport,
   StudentProfile,
@@ -2235,6 +2236,83 @@ export function useGetAdminStats<TData = Awaited<ReturnType<typeof getAdminStats
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAdminStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAdminReferralsUrl = () => {
+
+
+
+
+  return `/api/admin/referrals`
+}
+
+/**
+ * @summary Signup counts per referral channel (admin)
+ */
+export const getAdminReferrals = async ( options?: Parameters<typeof customFetch>[1]): Promise<ReferralReport> => {
+
+  return customFetch<ReferralReport>(getGetAdminReferralsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminReferralsQueryKey = () => {
+    return [
+    `/api/admin/referrals`
+    ] as const;
+    }
+
+
+export const getGetAdminReferralsQueryOptions = <TData = Awaited<ReturnType<typeof getAdminReferrals>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminReferrals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminReferralsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminReferrals>>> = ({ signal }) => getAdminReferrals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminReferrals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminReferralsQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminReferrals>>>
+export type GetAdminReferralsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Signup counts per referral channel (admin)
+ */
+
+export function useGetAdminReferrals<TData = Awaited<ReturnType<typeof getAdminReferrals>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminReferrals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminReferralsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
