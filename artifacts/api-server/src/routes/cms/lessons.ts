@@ -275,7 +275,11 @@ router.post("/cms/lessons/:id/approve", requireReviewer, async (req, res): Promi
     res.status(422).json({ error: "Only in_review lessons can be approved" }); return;
   }
 
-  const { notes } = req.body;
+  // `?? {}` because approve is called with no request body at all (the client
+  // sends notes only when rejecting). Express leaves req.body undefined for a
+  // bodyless POST, and destructuring that threw — which blocked every approval,
+  // and with it the whole publish workflow.
+  const { notes } = req.body ?? {};
   await db.update(lessonsTable).set({ status: "approved" }).where(eq(lessonsTable.id, id));
   await pool.query(
     `INSERT INTO lesson_reviews (lesson_id, reviewer_id, decision, notes) VALUES ($1, $2, $3, $4)`,
@@ -298,7 +302,7 @@ router.post("/cms/lessons/:id/reject", requireReviewer, async (req, res): Promis
     res.status(422).json({ error: "Only in_review lessons can be rejected" }); return;
   }
 
-  const { notes } = req.body;
+  const { notes } = req.body ?? {};
   await db.update(lessonsTable).set({ status: "draft" }).where(eq(lessonsTable.id, id));
   await pool.query(
     `INSERT INTO lesson_reviews (lesson_id, reviewer_id, decision, notes) VALUES ($1, $2, $3, $4)`,
