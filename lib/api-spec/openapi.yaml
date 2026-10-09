@@ -2234,6 +2234,9 @@ components:
           description: Which skill this question tests. Drives the per-skill breakdown.
           type: string
           enum: [reading, listening, vocabulary, grammar, comprehension, writing]
+        mediaId:
+          description: The clip a listening question is about, played via GET /media/{id}/url.
+          type: ["number", "null"]
         passage:
           description: Shared reading text, when several questions are about one passage.
           type: ["string", "null"]

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { BlockMedia } from "@/components/block-media";
 import { useToast } from "@/hooks/use-toast";
 import type { PlacementTestResult } from "@workspace/api-client-react";
 
@@ -211,6 +212,9 @@ export default function Placement() {
       {/* Question Card */}
       <Card className="border-border shadow-md mb-6 animate-in slide-in-from-right-8 duration-300">
         <CardContent className="p-6 md:p-8 space-y-6">
+          {/* A listening question is about a clip; without it there is nothing
+              to answer. The passage below carries the transcript, if any. */}
+          <BlockMedia mediaId={(question as { mediaId?: number | null }).mediaId} kind="audio" />
           <div dir="ltr" className="text-2xl font-bold text-foreground text-center my-4 font-serif">
             {question.questionText}
           </div>

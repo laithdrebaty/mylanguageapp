@@ -224,6 +224,11 @@ export interface PlacementQuestion {
   /** Which skill this question tests. Drives the per-skill breakdown. */
   skill?: PlacementQuestionSkill;
   /**
+     * The clip a listening question is about, played via GET /media/{id}/url.
+     * @nullable
+     */
+  mediaId?: number | null;
+  /**
      * Shared reading text, when several questions are about one passage.
      * @nullable
      */

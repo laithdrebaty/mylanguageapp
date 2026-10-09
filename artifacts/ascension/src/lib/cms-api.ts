@@ -124,6 +124,30 @@ export interface QuizBlockConfig {
   points?: number;
 }
 
+
+/** A placement question as the CMS sees it — answer keys included. */
+export interface CMSPlacementOption {
+  id?: number;
+  optionId: string;
+  text: string;
+  textAr?: string | null;
+  isCorrect?: boolean;
+}
+
+export interface CMSPlacementQuestion {
+  id: number;
+  questionText: string;
+  questionTextAr: string;
+  type: string;
+  skill: string;
+  difficulty: string;
+  passage?: string | null;
+  mediaId?: number | null;
+  isActive: boolean;
+  order: number;
+  options: CMSPlacementOption[];
+}
+
 export type LessonStatus = "draft" | "in_review" | "approved" | "published" | "archived";
 
 export interface CMSLesson {
@@ -368,4 +392,16 @@ export const cmsApi = {
       return get<{ logs: any[]; total: number; page: number; limit: number }>(`/cms/audit?${q}`);
     },
   },
+  // Placement test — the questions every new student is scored on
+  placement: {
+    list: () => get<{ questions: CMSPlacementQuestion[] }>("/cms/placement/questions"),
+    create: (body: Partial<CMSPlacementQuestion>) =>
+      post<CMSPlacementQuestion>("/cms/placement/questions", body),
+    update: (id: number, body: Partial<CMSPlacementQuestion>) =>
+      patch<CMSPlacementQuestion>(`/cms/placement/questions/${id}`, body),
+    delete: (id: number) => del<{ deleted: boolean }>(`/cms/placement/questions/${id}`),
+    reorder: (questionIds: number[]) =>
+      post<{ reordered: boolean }>("/cms/placement/questions/reorder", { questionIds }),
+  },
 };
+

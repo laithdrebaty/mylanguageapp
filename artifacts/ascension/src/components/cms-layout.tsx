@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { href: "/cms/curricula", label: "Curricula", icon: <BookMarked className="h-4 w-4" />, adminOnly: true },
   { href: "/cms/levels", label: "Levels", icon: <GraduationCap className="h-4 w-4" />, adminOnly: true },
   { href: "/cms/quizzes", label: "Quizzes", icon: <ListChecks className="h-4 w-4" /> },
+  { href: "/cms/placement", label: "Placement Test", icon: <ClipboardList className="h-4 w-4" /> },
   { href: "/cms/vocabulary", label: "Vocabulary", icon: <BookText className="h-4 w-4" /> },
   { href: "/cms/media", label: "Media", icon: <Image className="h-4 w-4" /> },
   { href: "/cms/grading", label: "Marking", icon: <PenLine className="h-4 w-4" /> },

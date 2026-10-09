@@ -34,6 +34,7 @@ import LessonEditor from '@/pages/cms/lesson-editor';
 import LessonPreviewPage from '@/pages/cms/lesson-preview';
 import { LanguagesPage, CurriculaPage, LevelsPage } from '@/pages/cms/catalog';
 import VocabularyPage from '@/pages/cms/vocabulary';
+import CMSPlacement from '@/pages/cms/placement';
 import MediaPage from '@/pages/cms/media';
 import ReviewsPage from '@/pages/cms/reviews';
 import CMSQuizzesList from '@/pages/cms/quizzes-list';
@@ -93,6 +94,7 @@ function Router() {
         <ProtectedRoute path="/cms/levels" component={LevelsPage} requireCMS />
         <ProtectedRoute path="/cms/quizzes" component={CMSQuizzesList} requireCMS />
         <ProtectedRoute path="/cms/quizzes/:id" component={CMSQuizEditor} requireCMS />
+        <ProtectedRoute path="/cms/placement" component={CMSPlacement} requireCMS />
         <ProtectedRoute path="/cms/vocabulary" component={VocabularyPage} requireCMS />
         <ProtectedRoute path="/cms/media" component={MediaPage} requireCMS />
         <ProtectedRoute path="/cms/grading" component={CMSGradingQueue} requireCMS />
