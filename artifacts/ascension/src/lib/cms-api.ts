@@ -124,6 +124,30 @@ export interface QuizBlockConfig {
   points?: number;
 }
 
+
+/** A placement question as the CMS sees it — answer keys included. */
+export interface CMSPlacementOption {
+  id?: number;
+  optionId: string;
+  text: string;
+  textAr?: string | null;
+  isCorrect?: boolean;
+}
+
+export interface CMSPlacementQuestion {
+  id: number;
+  questionText: string;
+  questionTextAr: string;
+  type: string;
+  skill: string;
+  difficulty: string;
+  passage?: string | null;
+  mediaId?: number | null;
+  isActive: boolean;
+  order: number;
+  options: CMSPlacementOption[];
+}
+
 export type LessonStatus = "draft" | "in_review" | "approved" | "published" | "archived";
 
 export interface CMSLesson {
@@ -146,6 +170,8 @@ export interface CMSBlock {
   exampleAudio?: string | null; isRequired: boolean;
   estimatedMinutes?: number | null; isActive: boolean; config?: unknown;
   exercise?: CMSExercise | null; options?: CMSOption[];
+  /** Every question on this block. `exercise`/`options` describe the first. */
+  exercises?: Array<CMSExercise & { options: CMSOption[] }>;
 }
 
 export interface CMSExercise {
@@ -293,7 +319,10 @@ export const cmsApi = {
         key: string;
         upload: { url: string; headers: Record<string, string> };
       }>("/cms/media/uploads", {
-        contentType: file.type || "application/octet-stream",
+        // A MediaRecorder file carries its codec ("audio/webm;codecs=opus").
+        // The server signs the bare type, and the browser's PUT header has to
+        // match that signature exactly — so send the bare type here too.
+        contentType: (file.type || "application/octet-stream").split(";")[0].trim(),
         sizeBytes: file.size,
         originalName: file.name,
       });
@@ -312,10 +341,12 @@ export const cmsApi = {
       onProgress?.("confirming");
       // Confirmation goes to the student endpoint: it checks the uploader owns
       // the pending row, which is true for staff uploads too.
-      return post<{ mediaId: number; status: string; sizeBytes: number | null }>(
+      const done = await post<{ mediaId: number; status: string; sizeBytes: number | null }>(
         `/media/uploads/${begun.mediaId}/complete`,
         {},
       );
+      // The key comes from the signing step; the confirmation does not repeat it.
+      return { ...done, key: begun.key };
     },
 
     /** A short-lived playback URL, for previewing an asset in the CMS. */
@@ -361,4 +392,16 @@ export const cmsApi = {
       return get<{ logs: any[]; total: number; page: number; limit: number }>(`/cms/audit?${q}`);
     },
   },
+  // Placement test — the questions every new student is scored on
+  placement: {
+    list: () => get<{ questions: CMSPlacementQuestion[] }>("/cms/placement/questions"),
+    create: (body: Partial<CMSPlacementQuestion>) =>
+      post<CMSPlacementQuestion>("/cms/placement/questions", body),
+    update: (id: number, body: Partial<CMSPlacementQuestion>) =>
+      patch<CMSPlacementQuestion>(`/cms/placement/questions/${id}`, body),
+    delete: (id: number) => del<{ deleted: boolean }>(`/cms/placement/questions/${id}`),
+    reorder: (questionIds: number[]) =>
+      post<{ reordered: boolean }>("/cms/placement/questions/reorder", { questionIds }),
+  },
 };
+

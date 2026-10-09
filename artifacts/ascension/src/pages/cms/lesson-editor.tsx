@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { MediaPicker } from "@/components/media-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useGetMe } from "@workspace/api-client-react";
 import {
@@ -131,7 +132,14 @@ export default function LessonEditor({ lessonId }: Props) {
   const addBlock = async (type: string) => {
     if (!lessonId) { toast({ description: "Save lesson metadata first" }); return; }
     const maxOrder = blocks.length > 0 ? Math.max(...blocks.map(b => b.order)) : 0;
-    const block = await cmsApi.blocks.create(lessonId, { type, order: maxOrder + 1, isRequired: true, isActive: true });
+    // Recording blocks start optional: required + unconfigured strands the student.
+    const startsOptional = type === "speaking_prompt" || type === "pronunciation_guide";
+    const block = await cmsApi.blocks.create(lessonId, {
+      type,
+      order: maxOrder + 1,
+      isRequired: !startsOptional,
+      isActive: true,
+    });
     setBlocks(prev => [...prev, block]);
     setExpandedBlocks(prev => new Set([...prev, block.id]));
   };
@@ -435,6 +443,7 @@ const EDITABLE_BLOCK_FIELDS = [
   "title", "titleAr", "instructions", "instructionsAr",
   "content", "contentAr", "audioNote", "prompt", "promptAr",
   "exampleAudio", "isRequired", "isActive", "estimatedMinutes", "config",
+  "referenceMediaId", "expectsReferenceReading",
 ] as const;
 
 function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
@@ -463,16 +472,33 @@ function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
     setSaving(false);
   };
 
-  const updateExercise = async (exerciseData: Partial<CMSExercise> & { options?: CMSOption[] }) => {
+  /** Saves one question. `exerciseId` null creates a new one on this block. */
+  const updateExercise = async (
+    exerciseData: Partial<CMSExercise> & { options?: CMSOption[] },
+    exerciseId?: number | null,
+  ) => {
     setSaving(true);
     try {
-      if (block.exercise?.id) {
-        await cmsApi.blocks.updateExercise(lessonId, block.exercise.id, exerciseData);
+      const id = exerciseId === undefined ? block.exercise?.id : exerciseId;
+      if (id) {
+        await cmsApi.blocks.updateExercise(lessonId, id, exerciseData);
       } else {
         await cmsApi.blocks.createExercise(lessonId, block.id, exerciseData);
       }
       qc.invalidateQueries({ queryKey: ["cms-blocks", lessonId] });
       toast({ title: "Exercise saved" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const deleteExercise = async (exerciseId: number) => {
+    setSaving(true);
+    try {
+      await cmsApi.blocks.deleteExercise(lessonId, exerciseId);
+      qc.invalidateQueries({ queryKey: ["cms-blocks", lessonId] });
+      toast({ title: "Question deleted" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
@@ -530,10 +556,15 @@ function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
 
       {block.type === "audio_placeholder" && (
         <>
-          <div className="space-y-1">
-            <Label className="text-xs text-gray-500">Audio reference / URL key</Label>
-            <Input value={localBlock.audioNote ?? ""} onChange={e => setLocalBlock((b: any) => ({ ...b, audioNote: e.target.value }))} placeholder="media-key or URL" className="text-sm" />
-          </div>
+          <MediaPicker
+            label="Listening audio"
+            accept="audio"
+            value={localBlock.audioNote}
+            disabled={!isEditable}
+            onChange={(key, mediaId) =>
+              setLocalBlock((b: any) => ({ ...b, audioNote: key ?? "", referenceMediaId: mediaId }))
+            }
+          />
           <div className="space-y-1">
             <Label className="text-xs text-gray-500">Instructions</Label>
             <Textarea rows={2} value={localBlock.instructions ?? ""} onChange={e => setLocalBlock((b: any) => ({ ...b, instructions: e.target.value }))} className="text-sm" />
@@ -549,7 +580,13 @@ function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
       )}
 
       {block.type === "mcq" && (
-        <MCQEditor block={block} onSave={updateExercise} saving={saving} isEditable={isEditable} />
+        <MCQListEditor
+          block={block}
+          onSave={updateExercise}
+          onDelete={deleteExercise}
+          saving={saving}
+          isEditable={isEditable}
+        />
       )}
 
       {(block.type === "speaking_prompt") && (
@@ -572,10 +609,30 @@ function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
             <Label className="text-xs text-gray-500">Pronunciation notes (Arabic guidance)</Label>
             <Textarea rows={2} dir="rtl" value={localBlock.contentAr ?? ""} onChange={e => setLocalBlock((b: any) => ({ ...b, contentAr: e.target.value }))} className="text-sm" />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-gray-500">Audio reference</Label>
-            <Input value={localBlock.audioNote ?? ""} onChange={e => setLocalBlock((b: any) => ({ ...b, audioNote: e.target.value }))} className="text-sm" />
-          </div>
+          {/* Without this the recording is scored on fluency alone — there is
+              nothing to align the transcript against, so no accuracy score. */}
+          <label className="flex items-start gap-2 rounded-md border border-gray-200 p-2">
+            <Checkbox
+              checked={!!localBlock.expectsReferenceReading}
+              disabled={!isEditable}
+              onCheckedChange={v => setLocalBlock((b: any) => ({ ...b, expectsReferenceReading: !!v }))}
+            />
+            <span className="text-xs text-gray-600">
+              <strong>Score accuracy against the text above.</strong> Tick when
+              "Phonetic / IPA" holds the words to read aloud, not a phonetic
+              transcription — the student's words are matched against it.
+              Unticked, only fluency is scored.
+            </span>
+          </label>
+          <MediaPicker
+            label="Reference audio (the model pronunciation)"
+            accept="audio"
+            value={localBlock.audioNote}
+            disabled={!isEditable}
+            onChange={(key, mediaId) =>
+              setLocalBlock((b: any) => ({ ...b, audioNote: key ?? "", referenceMediaId: mediaId }))
+            }
+          />
         </>
       )}
 
@@ -605,19 +662,91 @@ function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
   );
 }
 
-function MCQEditor({ block, onSave, saving, isEditable }: any) {
-  const [question, setQuestion] = useState(block.exercise?.question ?? "");
-  const [questionAr, setQuestionAr] = useState(block.exercise?.questionAr ?? "");
+/**
+ * All the questions on one MCQ block.
+ *
+ * A block used to hold exactly one question, so a ten-question comprehension
+ * check meant ten blocks. The server has always allowed many exercises per
+ * block — only the editor and the player assumed one.
+ */
+function MCQListEditor({ block, onSave, onDelete, saving, isEditable }: any) {
+  // `exercises` is the full list; older payloads only carry `exercise`.
+  const existing: any[] =
+    block.exercises?.length
+      ? block.exercises
+      : block.exercise
+        ? [{ ...block.exercise, options: block.options ?? [] }]
+        : [];
+
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <div className="space-y-3">
+      {existing.map((ex, i) => (
+        <div key={ex.id} className="rounded-md border border-gray-200 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500">Question {i + 1}</span>
+            {isEditable && existing.length > 1 && (
+              <Button size="sm" variant="ghost" className="h-6 text-red-500"
+                onClick={() => { if (confirm("Delete this question?")) onDelete(ex.id); }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+          <MCQEditor
+            exercise={ex}
+            options={ex.options ?? []}
+            blockId={block.id}
+            onSave={(data: any) => onSave(data, ex.id)}
+            saving={saving}
+            isEditable={isEditable}
+          />
+        </div>
+      ))}
+
+      {adding && (
+        <div className="rounded-md border border-dashed border-indigo-300 p-3">
+          <div className="mb-2 text-xs font-medium text-indigo-600">
+            New question {existing.length + 1}
+          </div>
+          <MCQEditor
+            exercise={null}
+            options={[]}
+            blockId={block.id}
+            onSave={async (data: any) => { await onSave(data, null); setAdding(false); }}
+            saving={saving}
+            isEditable={isEditable}
+          />
+        </div>
+      )}
+
+      {isEditable && !adding && (
+        <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+          <Plus className="mr-1 h-3.5 w-3.5" /> Add question
+        </Button>
+      )}
+
+      {existing.length === 0 && !adding && (
+        <p className="text-xs text-gray-400">No questions yet.</p>
+      )}
+    </div>
+  );
+}
+
+function MCQEditor({ exercise, options: initialOptions, blockId, onSave, saving, isEditable }: any) {
+  const [question, setQuestion] = useState(exercise?.question ?? "");
+  const [questionAr, setQuestionAr] = useState(exercise?.questionAr ?? "");
   const [options, setOptions] = useState<CMSOption[]>(
-    block.options?.length ? block.options : [
+    initialOptions?.length ? initialOptions : [
       { optionId: "a", text: "", textAr: "" },
       { optionId: "b", text: "", textAr: "" },
       { optionId: "c", text: "", textAr: "" },
       { optionId: "d", text: "", textAr: "" },
     ]
   );
-  const [correct, setCorrect] = useState(block.exercise?.correctOptionId ?? "a");
-  const [explanation, setExplanation] = useState(block.exercise?.explanation ?? "");
+  const [correct, setCorrect] = useState(exercise?.correctOptionId ?? "a");
+  const [explanation, setExplanation] = useState(exercise?.explanation ?? "");
+  const block = { id: blockId };
 
   const submit = () => onSave({ exerciseType: "mcq", question, questionAr, correctOptionId: correct, explanation, options });
 
@@ -632,11 +761,22 @@ function MCQEditor({ block, onSave, saving, isEditable }: any) {
         <Input dir="rtl" value={questionAr} onChange={e => setQuestionAr(e.target.value)} className="text-sm" />
       </div>
       <div className="space-y-2">
-        <Label className="text-xs text-gray-500">Options (select correct answer)</Label>
+        <Label className="text-xs font-medium text-gray-700">
+          Options — click the circle to mark the correct answer
+        </Label>
         {options.map((opt, i) => (
-          <div key={opt.optionId} className="flex items-center gap-2">
+          <div
+            key={opt.optionId}
+            className={`flex items-center gap-2 rounded-md border p-2 transition-colors ${
+              correct === opt.optionId
+                ? "border-green-500 bg-green-50"
+                : "border-transparent hover:border-gray-200"
+            }`}
+          >
             <input type="radio" name={`correct-${block.id}`} checked={correct === opt.optionId}
-              onChange={() => setCorrect(opt.optionId)} className="mt-1" />
+              onChange={() => setCorrect(opt.optionId)}
+              title="Mark as the correct answer"
+              className="h-5 w-5 shrink-0 cursor-pointer accent-green-600" />
             <span className="text-xs font-mono text-gray-500 w-4">{opt.optionId})</span>
             <Input value={opt.text} onChange={e => setOptions(o => o.map((x, j) => j === i ? { ...x, text: e.target.value } : x))} placeholder={`Option ${opt.optionId}`} className="text-sm flex-1" />
             <Input dir="rtl" value={opt.textAr ?? ""} onChange={e => setOptions(o => o.map((x, j) => j === i ? { ...x, textAr: e.target.value } : x))} placeholder="Arabic" className="text-sm flex-1" />

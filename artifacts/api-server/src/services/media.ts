@@ -96,7 +96,13 @@ export async function beginUpload(input: BeginUploadInput): Promise<BeginUploadR
   const allowed = isCurriculum ? ALLOWED_CMS_TYPES : ALLOWED_AUDIO_TYPES;
   const maxBytes = isCurriculum ? MAX_CMS_BYTES : MAX_RECORDING_BYTES;
 
-  if (!allowed[contentType]) {
+  // MediaRecorder reports the codec alongside the type — "audio/webm;codecs=opus".
+  // The allowlist holds bare types, so compare on the type and keep the
+  // normalised value: it is what gets signed and stored, and a stored type with
+  // a codec parameter would not match on the way back out either.
+  const baseContentType = (contentType ?? "").split(";")[0].trim().toLowerCase();
+
+  if (!allowed[baseContentType]) {
     throw new MediaValidationError(
       "UNSUPPORTED_TYPE",
       `Unsupported content type "${contentType}". Allowed: ${Object.keys(allowed).join(", ")}`,
@@ -136,17 +142,17 @@ export async function beginUpload(input: BeginUploadInput): Promise<BeginUploadR
   }
 
   const key = isCurriculum
-    ? curriculumKey(contentType, originalName)
-    : recordingKey(userId, contentType);
+    ? curriculumKey(baseContentType, originalName)
+    : recordingKey(userId, baseContentType);
 
-  const upload = await storage.presignUpload(key, contentType);
+  const upload = await storage.presignUpload(key, baseContentType);
 
   const [asset] = await db
     .insert(mediaAssetsTable)
     .values({
       key,
       originalName: originalName ?? null,
-      mimeType: contentType,
+      mimeType: baseContentType,
       sizeBytes,
       durationSec: durationSec ?? null,
       // Curriculum media belongs to the curriculum, not to the staff member who

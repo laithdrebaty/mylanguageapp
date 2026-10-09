@@ -57,6 +57,9 @@ router.get("/placement-test", async (req, res): Promise<void> => {
     // list of twenty questions.
     skill: q.skill,
     passage: q.passage,
+    // The clip a listening question is about. Resolved to a playable URL by the
+    // client through /media/:id/url — without it the question is unanswerable.
+    mediaId: q.mediaId ?? null,
     order: q.order,
     options: allOptions
       .filter((o) => o.questionId === q.id)

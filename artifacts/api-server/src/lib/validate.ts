@@ -71,12 +71,23 @@ export const passwordSchema = z
     message: "This password is too common, please choose a stronger one",
   });
 
+/** The channels offered at signup. Fixed so the admin report can group by them. */
+export const REFERRAL_SOURCES = [
+  "facebook", "instagram", "tiktok", "youtube", "whatsapp",
+  "friend", "search", "advertisement", "other",
+] as const;
+
 export const registerSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   email: z.string().email("Invalid email address"),
   password: passwordSchema,
   preferredLanguage: z.enum(["ar", "en"]).optional().default("ar"),
   country: z.string().length(2).optional().default("SY"),
+  // Required: the answer can only ever be collected here.
+  referralSource: z.enum(REFERRAL_SOURCES, {
+    errorMap: () => ({ message: "Please tell us how you heard about the app" }),
+  }),
+  referralDetail: z.string().max(200).optional(),
 });
 
 export const loginSchema = z.object({

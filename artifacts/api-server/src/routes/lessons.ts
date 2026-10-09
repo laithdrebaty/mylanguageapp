@@ -14,7 +14,7 @@ import {
   vocabularyTable,
   studentProfilesTable,
 } from "@workspace/db";
-import { requireAuth, requireStudent } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import { cached, CK, TTL } from "../services/cache";
 import {
   getCompletedLessonIds,
@@ -36,10 +36,15 @@ import { jobs } from "../services/jobs";
 const router: IRouter = Router();
 
 // ─── GET /lessons ─────────────────────────────────────────────────────────────
-// Requires student session; returns lessons in the student's curriculum
-// with authoritative state values.
-
-router.get("/lessons", requireStudent, async (req, res): Promise<void> => {
+// Returns lessons in the caller's curriculum with authoritative state values.
+//
+// requireAuth rather than requireStudent, here and on every lesson route below.
+// Taking a lesson is not student-only: an admin or content manager needs to walk
+// the real student flow to check their own content, and refusing them left the
+// level page listing nothing at all. Every handler resolves the caller's own
+// curriculum context and answers 403 when there is none, so a role without a
+// student profile is turned away by the data rather than by the role check.
+router.get("/lessons", requireAuth, async (req, res): Promise<void> => {
   const userId = req.session.userId!;
   const levelId = req.query.levelId ? parseInt(req.query.levelId as string, 10) : undefined;
 
@@ -219,7 +224,9 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
       .from(contentBlocksTable)
       .where(and(eq(contentBlocksTable.lessonId, lessonId), eq(contentBlocksTable.isActive, true)))
       .orderBy(asc(contentBlocksTable.order)),
-    db.select().from(exercisesTable).where(eq(exercisesTable.lessonId, lessonId)),
+    // Ordered so a question keeps its position for the student across saves.
+    db.select().from(exercisesTable).where(eq(exercisesTable.lessonId, lessonId))
+      .orderBy(asc(exercisesTable.ordering), asc(exercisesTable.id)),
     db.select().from(vocabularyTable).where(eq(vocabularyTable.lessonId, lessonId)),
   ]);
 
@@ -233,12 +240,16 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
       : [];
 
   const contentBlocks = blocks.map((block) => {
-    const exercise = exercises.find((e) => e.contentBlockId === block.id) ?? null;
-    const options = exercise
-      ? allOptions
-          .filter((o) => o.exerciseId === exercise.id)
-          .map((o) => ({ id: o.optionId, text: o.text, textAr: o.textAr ?? null }))
-      : null;
+    // A block can hold several questions; the singular fields below describe
+    // the first, and `questions` carries them all.
+    // Already ordered by the query; filter preserves that order.
+    const blockExercises = exercises.filter((e) => e.contentBlockId === block.id);
+    const exercise = blockExercises[0] ?? null;
+    const optionsFor = (exerciseId: number) =>
+      allOptions
+        .filter((o) => o.exerciseId === exerciseId)
+        .map((o) => ({ id: o.optionId, text: o.text, textAr: o.textAr ?? null }));
+    const options = exercise ? optionsFor(exercise.id) : null;
 
     return {
       id: block.id,
@@ -274,6 +285,14 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
       questionAr: exercise?.questionAr ?? null,
       // Never expose correctOptionId before submission
       options,
+      /** Every question on this block, in order. Answer keys stay server-side. */
+      questions: blockExercises.map((e) => ({
+        exerciseId: e.id,
+        exerciseType: e.exerciseType,
+        question: e.question,
+        questionAr: e.questionAr ?? null,
+        options: optionsFor(e.id),
+      })),
       prompt: block.prompt ?? null,
       promptAr: block.promptAr ?? null,
       exampleAudio: block.exampleAudio ?? null,
@@ -312,7 +331,7 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
 
 // ─── GET /lessons/:lessonId ───────────────────────────────────────────────────
 
-router.get("/lessons/:lessonId", requireStudent, async (req, res): Promise<void> => {
+router.get("/lessons/:lessonId", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
   if (isNaN(lessonId)) {
@@ -430,7 +449,7 @@ router.get("/lessons/:lessonId", requireStudent, async (req, res): Promise<void>
 
 // ─── POST /lessons/:lessonId/start ────────────────────────────────────────────
 
-router.post("/lessons/:lessonId/start", requireStudent, async (req, res): Promise<void> => {
+router.post("/lessons/:lessonId/start", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
   const userId = req.session.userId!;
@@ -560,6 +579,8 @@ router.post("/lessons/:lessonId/start", requireStudent, async (req, res): Promis
 
 const submitBlockSchema = z.object({
   clientSubmissionId: z.string().min(1),
+  /** Which question on the block is being answered. Omitted means the first. */
+  exerciseId: z.number().int().positive().optional(),
   selectedOptionId: z.string().optional(),
   responseText: z.string().optional(),
   mediaReference: z.string().optional(),
@@ -571,7 +592,7 @@ const submitBlockSchema = z.object({
 
 router.post(
   "/lessons/:lessonId/blocks/:blockId/submit",
-  requireStudent,
+  requireAuth,
   async (req, res): Promise<void> => {
     const lessonId = parseInt(
       Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId,
@@ -599,6 +620,7 @@ router.post(
 
     const {
       clientSubmissionId,
+      exerciseId: requestedExerciseId,
       selectedOptionId,
       responseText,
       mediaReference,
@@ -696,7 +718,8 @@ router.post(
       }
     }
 
-    // Find exercise for this block (if any)
+    // Find the exercise being answered. Scoping by block and lesson as well as
+    // id is what stops an exercise from another lesson being submitted here.
     const [exercise] = await db
       .select()
       .from(exercisesTable)
@@ -704,9 +727,16 @@ router.post(
         and(
           eq(exercisesTable.contentBlockId, blockId),
           eq(exercisesTable.lessonId, lessonId),
+          ...(requestedExerciseId ? [eq(exercisesTable.id, requestedExerciseId)] : []),
         ),
       )
+      .orderBy(asc(exercisesTable.id))
       .limit(1);
+
+    if (requestedExerciseId && !exercise) {
+      res.status(404).json({ error: "Exercise not found on this block" });
+      return;
+    }
 
     let activityType = "passive";
     let isCorrect: boolean | null = null;
@@ -849,7 +879,7 @@ router.post(
  */
 router.get(
   "/lessons/:lessonId/attempts/:attemptId",
-  requireStudent,
+  requireAuth,
   async (req, res): Promise<void> => {
     const attemptId = parseInt(
       Array.isArray(req.params.attemptId) ? req.params.attemptId[0] : req.params.attemptId,
@@ -909,7 +939,7 @@ router.get(
 
 // ─── POST /lessons/:lessonId/complete ─────────────────────────────────────────
 
-router.post("/lessons/:lessonId/complete", requireStudent, async (req, res): Promise<void> => {
+router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
   const userId = req.session.userId!;

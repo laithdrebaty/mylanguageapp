@@ -79,6 +79,11 @@ export default function Vocabulary() {
                   {vocab.pronunciation && (
                     <div className="text-sm text-muted-foreground mb-4 font-mono" dir="ltr">/{vocab.pronunciation}/</div>
                   )}
+                  {vocab.definition && (
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-2" dir="ltr">
+                      {vocab.definition}
+                    </p>
+                  )}
                   {vocab.exampleSentence && (
                     <div className="mt-4 pt-4 border-t border-border/50 space-y-2 text-left" dir="ltr">
                       <p className="text-md italic text-foreground leading-relaxed">{vocab.exampleSentence}</p>

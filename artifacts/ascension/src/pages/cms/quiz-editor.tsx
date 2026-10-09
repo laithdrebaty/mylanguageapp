@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { MediaPicker } from "@/components/media-picker";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -59,6 +60,8 @@ const BLOCK_GROUPS: Array<{ label: string; hint: string; types: string[] }> = [
 const AUTO_GRADED = new Set(["mcq", "multi_select", "spelling"]);
 const CHOICE_TYPES = new Set(["mcq", "multi_select"]);
 const WRITTEN_TYPES = new Set(["writing", "image_describe"]);
+/** Block types that carry a media file of their own. */
+const MEDIA_TYPES = new Set(["image_describe", "listening", "audio", "video"]);
 
 export default function QuizEditor({ params }: { params: { id: string } }) {
   const quizId = parseInt(params.id, 10);
@@ -629,6 +632,22 @@ function BlockCard({
           />
         </div>
       </div>
+
+      {/* The image to describe, or the clip to listen to — without this these
+          block types have no way to carry the media they are named for. */}
+      {MEDIA_TYPES.has(block.type) && (
+        <MediaPicker
+          label={block.type === "image_describe" ? "Image to describe" : "Audio / video"}
+          accept={block.type === "image_describe" ? "image" : "audio"}
+          allowRecording={block.type !== "image_describe"}
+          value={config.mediaKey ?? null}
+          disabled={disabled}
+          onChange={(key, mediaId) => {
+            patchConfig({ mediaKey: key });
+            set("referenceMediaId", mediaId);
+          }}
+        />
+      )}
 
       {/* Choice options and the answer key */}
       {CHOICE_TYPES.has(block.type) && (

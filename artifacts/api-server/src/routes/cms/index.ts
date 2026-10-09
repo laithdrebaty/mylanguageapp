@@ -9,6 +9,7 @@ import reviewsRouter from "./reviews";
 import gradingRouter from "./grading";
 import quizzesRouter from "./quizzes";
 import practiceReportsRouter from "./practice-reports";
+import placementRouter from "./placement";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(reviewsRouter);
 router.use(gradingRouter);
 router.use(quizzesRouter);
 router.use(practiceReportsRouter);
+router.use(placementRouter);
 
 export default router;

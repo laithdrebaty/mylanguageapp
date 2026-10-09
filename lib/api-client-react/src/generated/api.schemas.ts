@@ -53,6 +53,24 @@ export const RegisterInputPreferredLanguage = {
   en: 'en',
 } as const;
 
+/**
+ * How the student heard about the app.
+ */
+export type RegisterInputReferralSource = typeof RegisterInputReferralSource[keyof typeof RegisterInputReferralSource];
+
+
+export const RegisterInputReferralSource = {
+  facebook: 'facebook',
+  instagram: 'instagram',
+  tiktok: 'tiktok',
+  youtube: 'youtube',
+  whatsapp: 'whatsapp',
+  friend: 'friend',
+  search: 'search',
+  advertisement: 'advertisement',
+  other: 'other',
+} as const;
+
 export interface RegisterInput {
   /** @minLength 2 */
   name: string;
@@ -61,6 +79,13 @@ export interface RegisterInput {
   password: string;
   preferredLanguage?: RegisterInputPreferredLanguage;
   country?: string;
+  /** How the student heard about the app. */
+  referralSource: RegisterInputReferralSource;
+  /**
+     * Free text, kept only when referralSource is "other".
+     * @maxLength 200
+     */
+  referralDetail?: string;
 }
 
 export interface LoginInput {
@@ -93,7 +118,20 @@ export interface User {
   role: UserRole;
   preferredLanguage?: UserPreferredLanguage;
   country?: string;
+  /** Null for accounts created before the question was asked. */
+  referralSource?: string | null;
+  referralDetail?: string | null;
   createdAt: string;
+}
+
+export type ReferralReportItemsItem = {
+  source: string;
+  count: number;
+};
+
+export interface ReferralReport {
+  items: ReferralReportItemsItem[];
+  total: number;
 }
 
 export interface AuthResult {
@@ -185,6 +223,11 @@ export interface PlacementQuestion {
   type: PlacementQuestionType;
   /** Which skill this question tests. Drives the per-skill breakdown. */
   skill?: PlacementQuestionSkill;
+  /**
+     * The clip a listening question is about, played via GET /media/{id}/url.
+     * @nullable
+     */
+  mediaId?: number | null;
   /**
      * Shared reading text, when several questions are about one passage.
      * @nullable
@@ -481,6 +524,22 @@ export type ContentBlockOptionsItem = {
   textAr?: string | null;
 };
 
+export type ContentBlockQuestionsItemOptionsItem = {
+  id: string;
+  text: string;
+  /** @nullable */
+  textAr?: string | null;
+};
+
+export type ContentBlockQuestionsItem = {
+  exerciseId: number;
+  exerciseType: string;
+  question: string;
+  /** @nullable */
+  questionAr?: string | null;
+  options: ContentBlockQuestionsItemOptionsItem[];
+};
+
 export interface VocabularyItem {
   id: number;
   levelId: number;
@@ -488,6 +547,11 @@ export interface VocabularyItem {
   lessonId?: number | null;
   word: string;
   translation: string;
+  /**
+     * The explanation of the word, as opposed to its translation.
+     * @nullable
+     */
+  definition?: string | null;
   /** @nullable */
   exampleSentence?: string | null;
   /** @nullable */
@@ -534,6 +598,8 @@ export interface ContentBlock {
   questionAr?: string | null;
   /** @nullable */
   options?: ContentBlockOptionsItem[] | null;
+  /** Every question on this block, in order. The singular exerciseId / question / options fields describe the first and are kept for clients written before a block could hold more than one. */
+  questions?: ContentBlockQuestionsItem[];
   /** @nullable */
   prompt?: string | null;
   /** @nullable */
@@ -643,6 +709,8 @@ export interface LessonCompletionError {
 export interface LessonActivitySubmission {
   /** @minLength 1 */
   clientSubmissionId: string;
+  /** Which question on the block is being answered. Omit on a block with a single question and the server answers that one. */
+  exerciseId?: number;
   selectedOptionId?: string;
   responseText?: string;
   mediaReference?: string;
@@ -1994,6 +2062,10 @@ levelId?: number;
 export type GetAdminStudentsParams = {
 page?: number;
 limit?: number;
+/**
+ * Show only students who named this acquisition channel.
+ */
+referralSource?: string;
 };
 
 export type GetSkillReportParams = {

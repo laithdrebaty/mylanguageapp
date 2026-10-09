@@ -136,7 +136,10 @@ router.get("/cms/lessons/:id/preview", requireCMSAccess, async (req, res): Promi
   const [level, blocks, exercises, vocab] = await Promise.all([
     db.select().from(levelsTable).where(eq(levelsTable.id, lesson.levelId)).limit(1).then(r => r[0]),
     db.select().from(contentBlocksTable).where(eq(contentBlocksTable.lessonId, id)).orderBy(asc(contentBlocksTable.order)),
-    db.select().from(exercisesTable).where(eq(exercisesTable.lessonId, id)),
+    // Ordered explicitly: without it Postgres returns rows in physical order,
+    // so an UPDATE rewrites the row and the question jumps position on save.
+    db.select().from(exercisesTable).where(eq(exercisesTable.lessonId, id))
+      .orderBy(asc(exercisesTable.ordering), asc(exercisesTable.id)),
     db.select().from(vocabularyTable).where(eq(vocabularyTable.lessonId, id)),
   ]);
 
@@ -149,9 +152,20 @@ router.get("/cms/lessons/:id/preview", requireCMSAccess, async (req, res): Promi
     isPreview: true,
     lesson: { ...lesson, levelCode: level?.code },
     contentBlocks: blocks.map(block => {
-      const exercise = exercises.find(e => e.contentBlockId === block.id);
-      const options = exercise ? allOptions.filter(o => o.exerciseId === exercise.id) : null;
-      return { ...block, exercise: exercise ?? null, options };
+      // A block may hold several questions. `exercise`/`options` still describe
+      // the first so existing single-question callers keep working.
+      // Already ordered by the query; filter preserves that order.
+      const blockExercises = exercises.filter(e => e.contentBlockId === block.id);
+      const first = blockExercises[0];
+      return {
+        ...block,
+        exercise: first ?? null,
+        options: first ? allOptions.filter(o => o.exerciseId === first.id) : null,
+        exercises: blockExercises.map(e => ({
+          ...e,
+          options: allOptions.filter(o => o.exerciseId === e.id),
+        })),
+      };
     }),
     vocabulary: vocab,
   });
@@ -275,7 +289,8 @@ router.post("/cms/lessons/:id/approve", requireReviewer, async (req, res): Promi
     res.status(422).json({ error: "Only in_review lessons can be approved" }); return;
   }
 
-  const { notes } = req.body;
+  // approve is called with no body, and req.body is undefined for a bodyless POST.
+  const { notes } = req.body ?? {};
   await db.update(lessonsTable).set({ status: "approved" }).where(eq(lessonsTable.id, id));
   await pool.query(
     `INSERT INTO lesson_reviews (lesson_id, reviewer_id, decision, notes) VALUES ($1, $2, $3, $4)`,
@@ -298,7 +313,7 @@ router.post("/cms/lessons/:id/reject", requireReviewer, async (req, res): Promis
     res.status(422).json({ error: "Only in_review lessons can be rejected" }); return;
   }
 
-  const { notes } = req.body;
+  const { notes } = req.body ?? {};
   await db.update(lessonsTable).set({ status: "draft" }).where(eq(lessonsTable.id, id));
   await pool.query(
     `INSERT INTO lesson_reviews (lesson_id, reviewer_id, decision, notes) VALUES ($1, $2, $3, $4)`,

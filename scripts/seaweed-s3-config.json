@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "ascension",
+      "credentials": [
+        {
+          "accessKey": "ascension",
+          "secretKey": "ascension-dev-secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

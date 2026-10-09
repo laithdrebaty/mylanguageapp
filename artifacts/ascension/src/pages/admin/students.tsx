@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { useGetAdminStudents } from "@workspace/api-client-react";
+import { useGetAdminStudents, useGetAdminReferrals } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,14 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
 
+/** Arabic labels for the acquisition channels, keyed by the stored value. */
+const REFERRAL_LABELS: Record<string, string> = {
+  facebook: "فيسبوك", instagram: "إنستغرام", tiktok: "تيك توك",
+  youtube: "يوتيوب", whatsapp: "واتساب", friend: "صديق",
+  search: "بحث", advertisement: "إعلان", other: "أخرى",
+  unknown: "غير معروف",
+};
+
 export default function AdminStudents() {
   const [page, setPage] = useState(1);
   // Which student's placement is open. One at a time: each panel fetches its
@@ -16,7 +24,12 @@ export default function AdminStudents() {
   const [openStudent, setOpenStudent] = useState<number | null>(null);
   const limit = 10;
   
-  const { data, isLoading, error } = useGetAdminStudents({ page, limit });
+  const [referralFilter, setReferralFilter] = useState<string | null>(null);
+
+  const { data, isLoading, error } = useGetAdminStudents({
+    page, limit, ...(referralFilter ? { referralSource: referralFilter } : {}),
+  });
+  const { data: referrals } = useGetAdminReferrals();
 
   if (isLoading) {
     return (
@@ -44,6 +57,33 @@ export default function AdminStudents() {
         </div>
       </div>
 
+      {/* Acquisition channels — click one to filter the list below. */}
+      {referrals && referrals.items.length > 0 && (
+        <Card>
+          <CardContent className="p-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => { setReferralFilter(null); setPage(1); }}
+              className={`rounded-full px-3 py-1 text-sm transition-colors ${
+                referralFilter === null ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
+              }`}
+            >
+              الكل ({referrals.total})
+            </button>
+            {referrals.items.map((r) => (
+              <button
+                key={r.source}
+                onClick={() => { setReferralFilter(r.source); setPage(1); }}
+                className={`rounded-full px-3 py-1 text-sm transition-colors ${
+                  referralFilter === r.source ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
+                }`}
+              >
+                {REFERRAL_LABELS[r.source] ?? r.source} ({r.count})
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="p-0">
           <Table dir="rtl">
@@ -52,6 +92,7 @@ export default function AdminStudents() {
                 <TableHead className="text-right">الاسم</TableHead>
                 <TableHead className="text-right">البريد الإلكتروني</TableHead>
                 <TableHead className="text-right">البلد</TableHead>
+                <TableHead className="text-right">كيف تعرّف علينا</TableHead>
                 <TableHead className="text-right">تاريخ الانضمام</TableHead>
                 <TableHead className="text-right">المستوى</TableHead>
               </TableRow>
@@ -63,6 +104,11 @@ export default function AdminStudents() {
                     <TableCell className="font-medium">{student.name}</TableCell>
                     <TableCell className="text-muted-foreground font-mono" dir="ltr">{student.email}</TableCell>
                     <TableCell>{student.country || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {student.referralSource
+                        ? REFERRAL_LABELS[student.referralSource] ?? student.referralSource
+                        : "-"}
+                    </TableCell>
                     <TableCell>
                       {format(new Date(student.createdAt), "d MMM yyyy", { locale: ar })}
                     </TableCell>
@@ -86,7 +132,7 @@ export default function AdminStudents() {
                   </TableRow>
                   {openStudent === student.id && (
                     <TableRow>
-                      <TableCell colSpan={5} className="p-3">
+                      <TableCell colSpan={6} className="p-3">
                         <PlacementReview studentId={student.id} />
                       </TableCell>
                     </TableRow>
@@ -95,7 +141,7 @@ export default function AdminStudents() {
               ))}
               {data.students.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     لا يوجد طلاب لعرضهم
                   </TableCell>
                 </TableRow>

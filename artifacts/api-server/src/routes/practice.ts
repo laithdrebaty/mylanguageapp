@@ -11,7 +11,7 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { requireStudent } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import {
   getPreferences,
   savePreferences,
@@ -50,7 +50,7 @@ const badRequest = (res: import("express").Response, details: unknown): void => 
 
 // ─── Preferences ──────────────────────────────────────────────────────────────
 
-router.get("/practice/profile", requireStudent, async (req, res): Promise<void> => {
+router.get("/practice/profile", requireAuth, async (req, res): Promise<void> => {
   res.json({
     profile: await getPreferences(req.session.userId!),
     limits: PRACTICE_LIMITS,
@@ -65,7 +65,7 @@ const preferencesSchema = z.object({
   availableHours: z.array(z.number().int().min(0).max(23)).max(24).default([]),
 });
 
-router.put("/practice/profile", requireStudent, async (req, res): Promise<void> => {
+router.put("/practice/profile", requireAuth, async (req, res): Promise<void> => {
   const parsed = preferencesSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors);
 
@@ -79,7 +79,7 @@ router.put("/practice/profile", requireStudent, async (req, res): Promise<void> 
 
 // ─── Finding a partner ────────────────────────────────────────────────────────
 
-router.post("/practice/queue", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/queue", requireAuth, async (req, res): Promise<void> => {
   try {
     res.status(201).json(await joinQueue(req.session.userId!));
   } catch (err) {
@@ -87,7 +87,7 @@ router.post("/practice/queue", requireStudent, async (req, res): Promise<void> =
   }
 });
 
-router.delete("/practice/queue", requireStudent, async (req, res): Promise<void> => {
+router.delete("/practice/queue", requireAuth, async (req, res): Promise<void> => {
   await leaveQueue(req.session.userId!);
   res.json({ ok: true });
 });
@@ -98,7 +98,7 @@ router.delete("/practice/queue", requireStudent, async (req, res): Promise<void>
  * It refreshes presence and closes anything overdue, which is why it is a POST
  * despite reading like a GET — it changes state on purpose.
  */
-router.post("/practice/poll", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/poll", requireAuth, async (req, res): Promise<void> => {
   try {
     res.json(await pollStatus(req.session.userId!));
   } catch (err) {
@@ -113,7 +113,7 @@ function sessionIdOf(req: import("express").Request): number | null {
   return Number.isNaN(id) ? null : id;
 }
 
-router.post("/practice/sessions/:id/accept", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/sessions/:id/accept", requireAuth, async (req, res): Promise<void> => {
   const id = sessionIdOf(req);
   if (id === null) return badRequest(res, "Invalid session id");
 
@@ -128,7 +128,7 @@ const endSchema = z.object({
   reason: z.enum(["ended_by_user", "declined", "connection_failed"]).optional(),
 });
 
-router.post("/practice/sessions/:id/end", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/sessions/:id/end", requireAuth, async (req, res): Promise<void> => {
   const id = sessionIdOf(req);
   if (id === null) return badRequest(res, "Invalid session id");
 
@@ -152,7 +152,7 @@ router.post("/practice/sessions/:id/end", requireStudent, async (req, res): Prom
  * Served rather than bundled so a TURN relay can be switched on with
  * environment variables, and so its credentials never sit in public JavaScript.
  */
-router.get("/practice/ice-servers", requireStudent, (_req, res): void => {
+router.get("/practice/ice-servers", requireAuth, (_req, res): void => {
   res.json(iceServers());
 });
 
@@ -162,7 +162,7 @@ const signalSchema = z.object({
   payload: z.unknown(),
 });
 
-router.post("/practice/sessions/:id/signal", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/sessions/:id/signal", requireAuth, async (req, res): Promise<void> => {
   const id = sessionIdOf(req);
   if (id === null) return badRequest(res, "Invalid session id");
 
@@ -177,7 +177,7 @@ router.post("/practice/sessions/:id/signal", requireStudent, async (req, res): P
   }
 });
 
-router.get("/practice/sessions/:id/signals", requireStudent, async (req, res): Promise<void> => {
+router.get("/practice/sessions/:id/signals", requireAuth, async (req, res): Promise<void> => {
   const id = sessionIdOf(req);
   if (id === null) return badRequest(res, "Invalid session id");
 
@@ -199,7 +199,7 @@ const blockSchema = z.object({
   sessionId: z.number().int().positive().nullable().optional(),
 });
 
-router.post("/practice/block", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/block", requireAuth, async (req, res): Promise<void> => {
   const parsed = blockSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors);
 
@@ -214,7 +214,7 @@ router.post("/practice/block", requireStudent, async (req, res): Promise<void> =
   }
 });
 
-router.delete("/practice/block/:userId", requireStudent, async (req, res): Promise<void> => {
+router.delete("/practice/block/:userId", requireAuth, async (req, res): Promise<void> => {
   const blockedId = parseInt(req.params.userId as string, 10);
   if (Number.isNaN(blockedId)) return badRequest(res, "Invalid user id");
 
@@ -223,7 +223,7 @@ router.delete("/practice/block/:userId", requireStudent, async (req, res): Promi
   res.json({ ok: true });
 });
 
-router.get("/practice/blocks", requireStudent, async (req, res): Promise<void> => {
+router.get("/practice/blocks", requireAuth, async (req, res): Promise<void> => {
   res.json({ blocks: await listBlocks(req.session.userId!) });
 });
 
@@ -236,7 +236,7 @@ const reportSchema = z.object({
   alsoBlock: z.boolean().default(true),
 });
 
-router.post("/practice/report", requireStudent, async (req, res): Promise<void> => {
+router.post("/practice/report", requireAuth, async (req, res): Promise<void> => {
   const parsed = reportSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors);
 
@@ -264,7 +264,7 @@ router.post("/practice/report", requireStudent, async (req, res): Promise<void> 
 
 // ─── History ──────────────────────────────────────────────────────────────────
 
-router.get("/practice/history", requireStudent, async (req, res): Promise<void> => {
+router.get("/practice/history", requireAuth, async (req, res): Promise<void> => {
   res.json({ calls: await recentCalls(req.session.userId!) });
 });
 

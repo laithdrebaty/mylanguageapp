@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useMicRecorder } from "@/hooks/use-mic-recorder";
 import { uploadRecording, MediaUploadError } from "@/lib/media-api";
+import { BlockMedia } from "@/components/block-media";
 import {
   ArrowRight,
   ArrowLeft,
@@ -379,11 +380,16 @@ function QuizBlock({
     case "listening":
       return shell(
         <div className="space-y-3">
-          <p className="text-sm bg-muted/60 rounded-xl p-3 text-muted-foreground">
-            {block.config.mediaKey
-              ? "الملف الصوتي/المرئي غير متاح بعد."
-              : "لا يوجد ملف مرفق بهذا السؤال."}
-          </p>
+          {block.referenceMediaId ? (
+            <BlockMedia
+              mediaId={block.referenceMediaId}
+              kind={block.type === "video" ? "video" : "audio"}
+            />
+          ) : (
+            <p className="text-sm bg-muted/60 rounded-xl p-3 text-muted-foreground">
+              لا يوجد ملف مرفق بهذا السؤال.
+            </p>
+          )}
           {block.type === "listening" && (
             <Textarea
               dir="ltr"
@@ -486,6 +492,8 @@ function QuizBlock({
       const count = wordCount(text);
       return shell(
         <div className="space-y-2">
+          {/* The image is the question here — without it there is nothing to describe. */}
+          <BlockMedia mediaId={block.referenceMediaId} kind="image" />
           <Textarea
             dir="ltr"
             rows={7}

@@ -75,7 +75,18 @@ export function requireReviewer(req: Request, res: Response, next: NextFunction)
 
 /**
  * Student only.
- * Used for student learning endpoints (lessons, progress, submissions).
+ *
+ * Currently used by no route, and kept rather than deleted so the reasoning is
+ * on record: it used to guard the learning endpoints, which meant an admin or
+ * content manager could not walk the student flow to check their own content —
+ * the level page listed nothing and answering a question returned 403. Those
+ * routes now use `requireAuth` and resolve the caller's own curriculum context,
+ * answering 403 when there is none. That turns a role with no student profile
+ * away on the data rather than on its name.
+ *
+ * Reach for this only where being a student is genuinely the point — something
+ * that must never apply to staff at all, rather than something staff have no
+ * data for.
  */
 export function requireStudent(req: Request, res: Response, next: NextFunction): void {
   if (!req.session?.userId) {

@@ -19,6 +19,7 @@ import type {
   LessonProgress,
   LessonCompletionError,
 } from "@workspace/api-client-react";
+import { BlockMedia } from "@/components/block-media";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -129,30 +130,45 @@ function McqBlock({
   block,
   state,
   onSelect,
+  questionIndex = 0,
 }: {
   block: ContentBlock;
   state: BlockState;
   onSelect: (optionId: string) => void;
+  questionIndex?: number;
 }) {
   const result = state.result;
+  // A block may hold several questions; fall back to the singular fields for
+  // content authored before that was possible.
+  const questions = block.questions ?? [];
+  const active = questions[questionIndex];
+  const question = active?.question ?? block.question;
+  const questionAr = active?.questionAr ?? block.questionAr;
+  const options = active?.options ?? block.options ?? [];
 
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <BlockHeader block={block} />
 
+      {questions.length > 1 && (
+        <p className="text-center text-sm text-muted-foreground">
+          سؤال {questionIndex + 1} من {questions.length}
+        </p>
+      )}
+
       <div className="p-6 bg-secondary rounded-2xl text-center space-y-4">
-        {block.questionAr && (
-          <h3 className="text-lg font-medium text-muted-foreground">{block.questionAr}</h3>
+        {questionAr && (
+          <h3 className="text-lg font-medium text-muted-foreground">{questionAr}</h3>
         )}
-        {block.question && (
-          <h2 className="text-2xl font-bold font-serif" dir="ltr">{block.question}</h2>
+        {question && (
+          <h2 className="text-2xl font-bold font-serif" dir="ltr">{question}</h2>
         )}
       </div>
 
       {isUsableUrl(block.audioUrl) && <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />}
 
       <div className="space-y-3" dir="ltr">
-        {(block.options ?? []).map((option) => {
+        {options.map((option) => {
           const isSelected = state.selectedOptionId === option.id;
           const hasResult = !!result;
           const isCorrect = hasResult && result.correct === true && isSelected;
@@ -406,6 +422,12 @@ function SpeakingBlock({
       {isUsableUrl(block.audioUrl) && !isUsableUrl(block.exampleAudio) && (
         <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />
       )}
+      {/* Reference audio attached through the CMS picker is a media id, not a
+          URL. For a read-aloud block this is the model pronunciation the
+          student listens to before recording their own attempt. */}
+      {!isUsableUrl(block.exampleAudio) && !isUsableUrl(block.audioUrl) && (
+        <BlockMedia mediaId={block.referenceMediaId} kind="audio" />
+      )}
 
       {/* Honest about what happens to the recording: it is stored, but nothing
           scores it yet. */}
@@ -635,7 +657,13 @@ function TextBlock({ block }: { block: ContentBlock }) {
           </p>
         </div>
       )}
-      {isUsableUrl(block.audioUrl) && <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />}
+      {isUsableUrl(block.audioUrl) ? (
+        <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />
+      ) : (
+        /* Audio attached through the CMS picker is stored as a media id, not a
+           URL — reading and pronunciation blocks both reach the student here. */
+        <BlockMedia mediaId={block.referenceMediaId} kind="audio" />
+      )}
     </div>
   );
 }
@@ -649,6 +677,9 @@ function AudioPlaceholderBlock({ block }: { block: ContentBlock }) {
       <BlockHeader block={block} />
       {isUsableUrl(block.audioUrl) ? (
         <AudioWidget url={block.audioUrl!} label={block.audioNote ?? "استمع للمقطع الصوتي"} />
+      ) : block.referenceMediaId ? (
+        /* Uploaded through the CMS picker: playable only via a signed URL. */
+        <BlockMedia mediaId={block.referenceMediaId} kind="audio" />
       ) : (
         <Card className="border-border">
           <CardContent className="p-8 flex flex-col items-center justify-center text-center">
@@ -685,6 +716,8 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
 
   // All hooks must be unconditional
   const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
+  /** Which question of a multi-question block is on screen. */
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [blockStates, setBlockStates] = useState<Record<number, BlockState>>({});
   const [finishResult, setFinishResult] = useState<LessonProgress | null>(null);
   const [startTime] = useState(Date.now());
@@ -743,6 +776,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
 
     const payload: {
       clientSubmissionId: string;
+      exerciseId?: number;
       selectedOptionId?: string;
       responseText?: string;
       recordingDurationSeconds?: number;
@@ -751,6 +785,10 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
 
     if (block.type === "mcq" && st.selectedOptionId) {
       payload.selectedOptionId = st.selectedOptionId;
+      // Name the question when the block holds more than one, or the server
+      // would grade the answer against the first every time.
+      const q = block.questions?.[questionIndex];
+      if (q) payload.exerciseId = q.exerciseId;
     } else if (block.type === "open_ended" && st.responseText) {
       payload.responseText = st.responseText;
     } else if (
@@ -837,6 +875,17 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
   };
 
   const moveNext = () => {
+    // Work through the questions on this block before leaving it.
+    const total = currentBlock?.questions?.length ?? 0;
+    if (total > 1 && questionIndex < total - 1) {
+      setQuestionIndex(i => i + 1);
+      // Each question collects its own answer, so clear the previous verdict.
+      setBlockField(currentBlock.id, {
+        submitted: false, submitting: false, result: null, selectedOptionId: undefined,
+      });
+      return;
+    }
+    setQuestionIndex(0);
     if (isLastBlock) {
       handleFinish();
     } else {
@@ -844,13 +893,11 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     }
   };
 
-  // After submission the user clicks Continue again to advance
+  // After submission the user clicks Continue again to advance.
+  // Goes through moveNext so a block holding several questions steps to the
+  // next question rather than jumping straight out of the block.
   const handleContinueAfterSubmit = () => {
-    if (isLastBlock) {
-      handleFinish();
-    } else {
-      setCurrentBlockIndex(prev => prev + 1);
-    }
+    moveNext();
   };
 
   // ── Finish lesson ──────────────────────────────────────────────────
@@ -966,19 +1013,29 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
   // Continue is disabled during submit or if MCQ required and nothing selected yet
   let isContinueDisabled = isSubmitting || completeLesson.isPending;
   if (currentBlock && !isAlreadySubmitted && !isSubmitting) {
-    if (currentBlock.type === "mcq" && !currentState?.selectedOptionId) {
+    if (currentBlock.type === "mcq" && currentBlock.isRequired && !currentState?.selectedOptionId) {
       isContinueDisabled = true;
     }
   }
+
+  // Passive blocks need no skip — their "متابعة" always advances.
+  const SKIPPABLE_TYPES = ["mcq", "open_ended", "speaking_prompt", "pronunciation_guide"];
+  const canSkipCurrentBlock =
+    !!currentBlock &&
+    !currentBlock.isRequired &&
+    !isAlreadySubmitted &&
+    SKIPPABLE_TYPES.includes(currentBlock.type);
 
   // Label for continue button
   const continueLabel = () => {
     if (completeLesson.isPending || isSubmitting) {
       return <Loader2 className="h-5 w-5 animate-spin" />;
     }
-    if (isAlreadySubmitted && isLastBlock) return "إنهاء الدرس";
-    if (isAlreadySubmitted) return "متابعة";
-    if (isLastBlock) return "إنهاء الدرس";
+    // Questions left on this block means Continue, even on the last block —
+    // otherwise it offers to finish the lesson mid-way through the questions.
+    const totalQuestions = currentBlock?.questions?.length ?? 0;
+    const moreQuestionsHere = totalQuestions > 1 && questionIndex < totalQuestions - 1;
+    if (isLastBlock && !moreQuestionsHere) return "إنهاء الدرس";
     return "متابعة";
   };
 
@@ -1028,7 +1085,15 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
         );
 
       case "pronunciation_guide":
-        return <TextBlock block={currentBlock} />;
+        // Read-aloud: listen to the reference, then record an attempt.
+        return (
+          <SpeakingBlock
+            block={currentBlock}
+            state={st}
+            onRecordingDone={(dur) => setBlockField(currentBlock.id, { recordingDurationSeconds: dur, hasRecording: true })}
+            onUploadState={(patch) => setBlockField(currentBlock.id, patch)}
+          />
+        );
 
       case "spelling":
         return (
@@ -1054,6 +1119,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
           <McqBlock
             block={currentBlock}
             state={st}
+            questionIndex={questionIndex}
             onSelect={(optionId) => setBlockField(currentBlock.id, { selectedOptionId: optionId })}
           />
         );
@@ -1068,19 +1134,17 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
         );
 
       case "speaking_prompt":
-      case "pronunciation_guide" as string:
-        // speaking_prompt is handled here (pronunciation_guide already matched above as TextBlock)
-        if (currentBlock.type === "speaking_prompt") {
-          return (
-            <SpeakingBlock
-              block={currentBlock}
-              state={st}
-              onRecordingDone={(dur) => setBlockField(currentBlock.id, { recordingDurationSeconds: dur, hasRecording: true })}
-              onUploadState={(patch) => setBlockField(currentBlock.id, patch)}
-            />
-          );
-        }
-        return <TextBlock block={currentBlock} />;
+        // Both record. The difference is on the server: a pronunciation block
+        // carries a set passage, so the transcript is aligned against it for an
+        // accuracy score; an open speaking prompt is scored on fluency alone.
+        return (
+          <SpeakingBlock
+            block={currentBlock}
+            state={st}
+            onRecordingDone={(dur) => setBlockField(currentBlock.id, { recordingDurationSeconds: dur, hasRecording: true })}
+            onUploadState={(patch) => setBlockField(currentBlock.id, patch)}
+          />
+        );
 
       case "audio_placeholder":
         return <AudioPlaceholderBlock block={currentBlock} />;
@@ -1115,7 +1179,9 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto w-full p-4 md:p-8 pb-32">
+        {/* Bottom padding clears the fixed controls — and on mobile the bottom
+            nav underneath them too, or the last option cannot be scrolled to. */}
+        <div className="max-w-2xl mx-auto w-full p-4 md:p-8 pb-56 md:pb-40">
           {blocks.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground">لا يوجد محتوى في هذا الدرس بعد.</div>
           ) : (
@@ -1125,16 +1191,32 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
       </main>
 
       {/* Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 border-t border-border bg-card/80 backdrop-blur-md shrink-0 z-10 md:left-64">
+      {/* The sidebar is on the RIGHT (the UI is RTL), so the bar must be inset
+          from the right on desktop — md:left-64 pushed it under the sidebar.
+          On mobile it sits above the 16-unit bottom nav rather than beneath it. */}
+      <div className="fixed bottom-16 md:bottom-0 left-0 right-0 md:right-64 p-4 border-t border-border bg-card/80 backdrop-blur-md shrink-0 z-10">
         <div className="max-w-2xl mx-auto w-full flex justify-between items-center gap-4">
           <Button
             variant="ghost"
-            onClick={() => setCurrentBlockIndex(prev => prev - 1)}
+            onClick={() => { setQuestionIndex(0); setCurrentBlockIndex(prev => prev - 1); }}
             disabled={currentBlockIndex === 0 || isSubmitting}
             className="text-muted-foreground"
           >
             السابق
           </Button>
+
+          {/* Without this an unanswered optional activity is a dead end. */}
+          {canSkipCurrentBlock && (
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={moveNext}
+              disabled={isSubmitting || completeLesson.isPending}
+              className="h-14 rounded-xl"
+            >
+              تخطي
+            </Button>
+          )}
 
           <Button
             size="lg"
