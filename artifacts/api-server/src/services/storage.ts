@@ -186,6 +186,15 @@ class S3StorageProvider implements StorageProvider {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
+      // AWS SDK v3.729+ adds a CRC32 checksum to every PutObject by default.
+      // For a PRESIGNED upload that is computed over an empty body — the bytes
+      // are not here — and baked into the URL as x-amz-checksum-crc32=AAAAAA==.
+      // The browser then PUTs the real file and any S3 implementation that
+      // verifies the checksum (SeaweedFS, MinIO, R2) rejects it:
+      //   "checksum mismatch: expected AAAAAA==, got eB6jKg=="
+      // WHEN_REQUIRED leaves the checksum off unless the operation demands one.
+      requestChecksumCalculation: "WHEN_REQUIRED" as const,
+      responseChecksumValidation: "WHEN_REQUIRED" as const,
     };
 
     this.client = new S3Client({ ...base, endpoint: config.endpoint });
