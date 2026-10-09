@@ -2217,6 +2217,11 @@ components:
         responseText:
           description: The student's written answer, for a `written` question.
           type: string
+        exerciseId:
+          description: >
+            Which question on the block is being answered. Omit on a block with
+            a single question and the server answers that one.
+          type: number
         selectedOptionId:
           type: string
 
@@ -2613,6 +2618,36 @@ components:
                 type: string
               textAr:
                 type: ["string", "null"]
+        questions:
+          description: >-
+            Every question on this block, in order. The singular exerciseId /
+            question / options fields describe the first and are kept for
+            clients written before a block could hold more than one.
+          type: array
+          items:
+            type: object
+            required: [exerciseId, exerciseType, question, options]
+            properties:
+              exerciseId:
+                type: number
+              exerciseType:
+                type: string
+              question:
+                type: string
+              questionAr:
+                type: ["string", "null"]
+              options:
+                type: array
+                items:
+                  type: object
+                  required: [id, text]
+                  properties:
+                    id:
+                      type: string
+                    text:
+                      type: string
+                    textAr:
+                      type: ["string", "null"]
         # speaking / pronunciation
         prompt:
           type: ["string", "null"]

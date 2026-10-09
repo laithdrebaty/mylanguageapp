@@ -27,8 +27,11 @@ router.get("/cms/lessons/:lessonId/blocks", requireCMSAccess, async (req, res): 
     .where(eq(contentBlocksTable.lessonId, lessonId))
     .orderBy(asc(contentBlocksTable.order));
 
+  // Ordered explicitly: without it Postgres returns rows in physical order, so
+  // an UPDATE relocates the row and the question changes position on save.
   const exercisesForLesson = await db.select().from(exercisesTable)
-    .where(eq(exercisesTable.lessonId, lessonId));
+    .where(eq(exercisesTable.lessonId, lessonId))
+    .orderBy(asc(exercisesTable.ordering), asc(exercisesTable.id));
 
   const exerciseIds = exercisesForLesson.map(e => e.id);
   const allOptions = exerciseIds.length > 0
@@ -36,9 +39,19 @@ router.get("/cms/lessons/:lessonId/blocks", requireCMSAccess, async (req, res): 
     : [];
 
   res.json(blocks.map(block => {
-    const exercise = exercisesForLesson.find(e => e.contentBlockId === block.id);
-    const options = exercise ? allOptions.filter(o => o.exerciseId === exercise.id) : [];
-    return { ...block, exercise: exercise ?? null, options };
+    // A block may hold several questions. `exercise`/`options` describe the
+    // first, so callers written before that keep working.
+    const blockExercises = exercisesForLesson.filter(e => e.contentBlockId === block.id);
+    const first = blockExercises[0];
+    return {
+      ...block,
+      exercise: first ?? null,
+      options: first ? allOptions.filter(o => o.exerciseId === first.id) : [],
+      exercises: blockExercises.map(e => ({
+        ...e,
+        options: allOptions.filter(o => o.exerciseId === e.id),
+      })),
+    };
   }));
 });
 
@@ -185,6 +198,14 @@ router.post("/cms/lessons/:lessonId/blocks/:blockId/exercise", requireContentMan
 
   if (!question) { res.status(400).json({ error: "question is required" }); return; }
 
+  // Append after the questions already on this block, so a block holding
+  // several questions keeps a stable, author-visible order.
+  const siblings = await db
+    .select({ ordering: exercisesTable.ordering })
+    .from(exercisesTable)
+    .where(and(eq(exercisesTable.lessonId, lessonId), eq(exercisesTable.contentBlockId, blockId)));
+  const nextOrdering = siblings.reduce((max, s) => Math.max(max, s.ordering ?? 0), 0) + 1;
+
   const [exercise] = await db.insert(exercisesTable).values({
     lessonId, contentBlockId: blockId,
     exerciseType: exerciseType ?? "mcq",
@@ -196,7 +217,7 @@ router.post("/cms/lessons/:lessonId/blocks/:blockId/exercise", requireContentMan
     modelAnswer: modelAnswer ?? null, modelAnswerAr: modelAnswerAr ?? null,
     expectedConcepts: expectedConcepts ?? null,
     difficulty: difficulty ?? null, points: points ?? 10,
-    ordering: ordering ?? 0, audioUrl: audioUrl ?? null,
+    ordering: ordering ?? nextOrdering, audioUrl: audioUrl ?? null,
   }).returning();
 
   // Create options if provided

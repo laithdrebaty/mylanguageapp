@@ -205,6 +205,8 @@ export interface PlacementTestAnswer {
   questionId: number;
   /** The student's written answer, for a `written` question. */
   responseText?: string;
+  /** Which question on the block is being answered. Omit on a block with a single question and the server answers that one. */
+  exerciseId?: number;
   selectedOptionId?: string;
 }
 
@@ -481,6 +483,22 @@ export type ContentBlockOptionsItem = {
   textAr?: string | null;
 };
 
+export type ContentBlockQuestionsItemOptionsItem = {
+  id: string;
+  text: string;
+  /** @nullable */
+  textAr?: string | null;
+};
+
+export type ContentBlockQuestionsItem = {
+  exerciseId: number;
+  exerciseType: string;
+  question: string;
+  /** @nullable */
+  questionAr?: string | null;
+  options: ContentBlockQuestionsItemOptionsItem[];
+};
+
 export interface VocabularyItem {
   id: number;
   levelId: number;
@@ -534,6 +552,8 @@ export interface ContentBlock {
   questionAr?: string | null;
   /** @nullable */
   options?: ContentBlockOptionsItem[] | null;
+  /** Every question on this block, in order. The singular exerciseId / question / options fields describe the first and are kept for clients written before a block could hold more than one. */
+  questions?: ContentBlockQuestionsItem[];
   /** @nullable */
   prompt?: string | null;
   /** @nullable */
