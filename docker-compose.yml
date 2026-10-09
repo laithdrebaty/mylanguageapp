@@ -113,12 +113,11 @@ services:
       STORAGE_ACCESS_KEY_ID: ascension
       STORAGE_SECRET_ACCESS_KEY: ascension-dev-secret
       STORAGE_FORCE_PATH_STYLE: 'true'
-      # The browser reaches MinIO on the host, not on the compose network, so
-      # presigned URLs must be rewritten to an address it can actually resolve.
       # The browser reaches storage directly, not over the compose network, so
-      # presigned URLs must be signed for an address it can actually resolve.
-      # Override in .env when the browser does not reach the host as localhost
-      # (e.g. Podman on Windows, where the stack is reached at the VM's IP).
+      # presigned URLs must be SIGNED for an address it can resolve — SigV4
+      # signs the Host header, so rewriting the URL afterwards breaks it.
+      # Override in .env wherever the browser does not reach the host as
+      # localhost.
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
     ports:
       - '8080:8080'

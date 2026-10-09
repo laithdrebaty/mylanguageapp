@@ -106,7 +106,7 @@ Not blockers for this branch, but known and unfinished:
 ## Developer-experience note
 
 The API container has no source bind mount, so every backend change needs a full
-`podman compose build --no-cache api` plus `up -d --force-recreate api` —
+`docker compose build --no-cache api` plus `up -d --force-recreate api` —
 several minutes. The web container hot-reloads because its `src` is mounted.
 
 Mounting the API source and running it under `tsx watch` would make backend
