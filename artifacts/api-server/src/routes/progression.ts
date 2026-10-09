@@ -9,7 +9,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { requireAuth, requireStudent } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import {
   getLevelEvaluation,
   getEvaluationEligibility,
@@ -26,7 +26,7 @@ const router: IRouter = Router();
  * not an error. `evaluation: null` means the curriculum team has not published
  * one for this level yet.
  */
-router.get("/levels/:levelId/evaluation", requireStudent, async (req, res): Promise<void> => {
+router.get("/levels/:levelId/evaluation", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.levelId) ? req.params.levelId[0] : req.params.levelId;
   const levelId = parseInt(raw as string, 10);
 

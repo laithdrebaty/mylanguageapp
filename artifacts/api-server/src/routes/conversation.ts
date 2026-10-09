@@ -11,7 +11,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { db, studentSubscriptionsTable } from "@workspace/db";
-import { requireStudent } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import {
   startConversation,
   takeTurn,
@@ -62,7 +62,7 @@ function handleError(err: unknown, res: import("express").Response): void {
 }
 
 /** Resume whatever is open, so a reload does not lose the thread. */
-router.get("/conversation/active", requireStudent, async (req, res): Promise<void> => {
+router.get("/conversation/active", requireAuth, async (req, res): Promise<void> => {
   res.json({ session: await getActiveSession(req.session.userId!) });
 });
 
@@ -71,7 +71,7 @@ const startSchema = z.object({
   blockId: z.number().int().positive().nullable().optional(),
 });
 
-router.post("/conversation/start", requireStudent, async (req, res): Promise<void> => {
+router.post("/conversation/start", requireAuth, async (req, res): Promise<void> => {
   const parsed = startSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
@@ -97,7 +97,7 @@ const turnSchema = z.object({
   mediaId: z.number().int().positive().optional(),
 });
 
-router.post("/conversation/:id/turn", requireStudent, async (req, res): Promise<void> => {
+router.post("/conversation/:id/turn", requireAuth, async (req, res): Promise<void> => {
   const sessionId = parseInt(req.params.id as string, 10);
   if (isNaN(sessionId)) {
     res.status(400).json({ error: "Invalid session ID" });
@@ -148,7 +148,7 @@ router.post("/conversation/:id/turn", requireStudent, async (req, res): Promise<
   }
 });
 
-router.post("/conversation/:id/end", requireStudent, async (req, res): Promise<void> => {
+router.post("/conversation/:id/end", requireAuth, async (req, res): Promise<void> => {
   const sessionId = parseInt(req.params.id as string, 10);
   if (isNaN(sessionId)) {
     res.status(400).json({ error: "Invalid session ID" });

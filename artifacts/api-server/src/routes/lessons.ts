@@ -14,7 +14,7 @@ import {
   vocabularyTable,
   studentProfilesTable,
 } from "@workspace/db";
-import { requireAuth, requireStudent } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import { cached, CK, TTL } from "../services/cache";
 import {
   getCompletedLessonIds,
@@ -36,13 +36,14 @@ import { jobs } from "../services/jobs";
 const router: IRouter = Router();
 
 // ─── GET /lessons ─────────────────────────────────────────────────────────────
-// Requires student session; returns lessons in the student's curriculum
-// with authoritative state values.
-
-// requireAuth, not requireStudent: reading the curriculum is not a student-only
-// action. An admin or content manager following the app's own navigation hits
-// this, and refusing them left the level page listing no lessons at all. The
-// write endpoints below stay student-only — an admin has no progress to record.
+// Returns lessons in the caller's curriculum with authoritative state values.
+//
+// requireAuth rather than requireStudent, here and on every lesson route below.
+// Taking a lesson is not student-only: an admin or content manager needs to walk
+// the real student flow to check their own content, and refusing them left the
+// level page listing nothing at all. Every handler resolves the caller's own
+// curriculum context and answers 403 when there is none, so a role without a
+// student profile is turned away by the data rather than by the role check.
 router.get("/lessons", requireAuth, async (req, res): Promise<void> => {
   const userId = req.session.userId!;
   const levelId = req.query.levelId ? parseInt(req.query.levelId as string, 10) : undefined;
@@ -330,7 +331,6 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
 
 // ─── GET /lessons/:lessonId ───────────────────────────────────────────────────
 
-// Reading one lesson, like listing them, is not student-only — see GET /lessons.
 router.get("/lessons/:lessonId", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
@@ -449,7 +449,7 @@ router.get("/lessons/:lessonId", requireAuth, async (req, res): Promise<void> =>
 
 // ─── POST /lessons/:lessonId/start ────────────────────────────────────────────
 
-router.post("/lessons/:lessonId/start", requireStudent, async (req, res): Promise<void> => {
+router.post("/lessons/:lessonId/start", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
   const userId = req.session.userId!;
@@ -592,7 +592,7 @@ const submitBlockSchema = z.object({
 
 router.post(
   "/lessons/:lessonId/blocks/:blockId/submit",
-  requireStudent,
+  requireAuth,
   async (req, res): Promise<void> => {
     const lessonId = parseInt(
       Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId,
@@ -879,7 +879,7 @@ router.post(
  */
 router.get(
   "/lessons/:lessonId/attempts/:attemptId",
-  requireStudent,
+  requireAuth,
   async (req, res): Promise<void> => {
     const attemptId = parseInt(
       Array.isArray(req.params.attemptId) ? req.params.attemptId[0] : req.params.attemptId,
@@ -939,7 +939,7 @@ router.get(
 
 // ─── POST /lessons/:lessonId/complete ─────────────────────────────────────────
 
-router.post("/lessons/:lessonId/complete", requireStudent, async (req, res): Promise<void> => {
+router.post("/lessons/:lessonId/complete", requireAuth, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.lessonId) ? req.params.lessonId[0] : req.params.lessonId;
   const lessonId = parseInt(raw, 10);
   const userId = req.session.userId!;
