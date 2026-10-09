@@ -542,6 +542,11 @@ export interface VocabularyItem {
   lessonId?: number | null;
   word: string;
   translation: string;
+  /**
+     * The explanation of the word, as opposed to its translation.
+     * @nullable
+     */
+  definition?: string | null;
   /** @nullable */
   exampleSentence?: string | null;
   /** @nullable */

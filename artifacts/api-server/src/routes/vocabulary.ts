@@ -19,6 +19,8 @@ router.get("/vocabulary", async (req, res): Promise<void> => {
     lessonId: v.lessonId ?? null,
     word: v.word,
     translation: v.translation,
+    /** The explanation, as opposed to the one-word translation. */
+    definition: v.definition ?? null,
     exampleSentence: v.exampleSentence ?? null,
     exampleSentenceAr: v.exampleSentenceAr ?? null,
     pronunciation: v.pronunciation ?? null,

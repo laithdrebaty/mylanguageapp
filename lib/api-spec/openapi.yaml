@@ -2935,6 +2935,9 @@ components:
           type: string
         translation:
           type: string
+        definition:
+          description: The explanation of the word, as opposed to its translation.
+          type: ["string", "null"]
         exampleSentence:
           type: ["string", "null"]
         exampleSentenceAr:

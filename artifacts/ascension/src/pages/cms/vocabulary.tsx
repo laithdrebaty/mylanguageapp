@@ -4,6 +4,7 @@ import { cmsApi } from "@/lib/cms-api";
 import { CMSLayout } from "@/components/cms-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TagsInput } from "@/components/tags-input";
@@ -114,7 +115,20 @@ export default function VocabularyPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="sm:col-span-2">
+              {/* The explanation of the word, as opposed to its one-word
+                  translation. The column and the API accepted it already; only
+                  the form never offered anywhere to type it. */}
+              <div className="col-span-2 md:col-span-4 space-y-1">
+                <Label className="text-xs text-gray-500">Explanation / definition</Label>
+                <Textarea
+                  rows={2}
+                  value={form.definition ?? ""}
+                  onChange={e => setForm((f: any) => ({ ...f, definition: e.target.value }))}
+                  placeholder="What the word means, in the student's own level of English"
+                  className="text-sm"
+                />
+              </div>
+              <div className="col-span-2 md:col-span-4">
                 <TagsInput
                   value={form.tags}
                   suggestions={COMMON_TAGS}
@@ -156,7 +170,12 @@ export default function VocabularyPage() {
                   <tr key={v.id} className="hover:bg-gray-50">
                     {editId === v.id ? (
                       <>
-                        <td className="px-4 py-2"><Input value={editForm.word} onChange={e => setEditForm((f: any) => ({ ...f, word: e.target.value }))} className="text-sm h-7" /></td>
+                        <td className="px-4 py-2 space-y-1">
+                          <Input value={editForm.word} onChange={e => setEditForm((f: any) => ({ ...f, word: e.target.value }))} className="text-sm h-7" />
+                          <Input value={editForm.definition ?? ""} placeholder="Explanation"
+                            onChange={e => setEditForm((f: any) => ({ ...f, definition: e.target.value }))}
+                            className="text-xs h-7" />
+                        </td>
                         <td className="px-4 py-2"><Input dir="rtl" value={editForm.translation} onChange={e => setEditForm((f: any) => ({ ...f, translation: e.target.value }))} className="text-sm h-7" /></td>
                         <td className="px-4 py-2 hidden md:table-cell"><Input value={editForm.partOfSpeech ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, partOfSpeech: e.target.value }))} className="text-sm h-7 w-24" /></td>
                         <td className="px-4 py-2 hidden lg:table-cell"><Input value={editForm.pronunciation ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, pronunciation: e.target.value }))} className="text-sm h-7 font-mono" /></td>
@@ -171,7 +190,12 @@ export default function VocabularyPage() {
                       </>
                     ) : (
                       <>
-                        <td className="px-4 py-2.5 font-medium text-gray-800">{v.word}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-gray-800">{v.word}</div>
+                          {v.definition && (
+                            <div className="text-xs text-gray-500 mt-0.5">{v.definition}</div>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 text-gray-600">{v.translation}</td>
                         <td className="px-4 py-2.5 hidden md:table-cell text-gray-400 text-xs capitalize">{v.part_of_speech ?? "—"}</td>
                         <td className="px-4 py-2.5 hidden lg:table-cell font-mono text-gray-400 text-xs">{v.pronunciation ?? "—"}</td>
@@ -185,7 +209,7 @@ export default function VocabularyPage() {
                           </div>
                         </td>
                         <td className="px-4 py-2.5 text-right">
-                          <button onClick={() => { setEditId(v.id); setEditForm({ word: v.word, translation: v.translation, partOfSpeech: v.part_of_speech, pronunciation: v.pronunciation, exampleSentence: v.example_sentence, exampleSentenceAr: v.example_sentence_ar, tags: v.tags ?? [] }); }}
+                          <button onClick={() => { setEditId(v.id); setEditForm({ word: v.word, translation: v.translation, partOfSpeech: v.part_of_speech, pronunciation: v.pronunciation, exampleSentence: v.example_sentence, exampleSentenceAr: v.example_sentence_ar, definition: v.definition, tags: v.tags ?? [] }); }}
                             className="p-1 rounded hover:bg-gray-100 text-gray-500 mr-0.5"><Pencil className="h-3.5 w-3.5" /></button>
                           <button onClick={() => { if (confirm(`Delete "${v.word}"?`)) deleteMut.mutate(v.id); }}
                             className="p-1 rounded hover:bg-red-50 text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
