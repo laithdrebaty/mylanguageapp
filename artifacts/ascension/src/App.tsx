@@ -17,6 +17,7 @@ import Learn from '@/pages/learn';
 import Level from '@/pages/level';
 import Lesson from '@/pages/lesson';
 import Quiz from '@/pages/quiz';
+import Quizzes from '@/pages/quizzes';
 import { ForgotPassword, ResetPassword } from '@/pages/password-reset';
 import Vocabulary from '@/pages/vocabulary';
 import Practice from '@/pages/practice';
@@ -72,6 +73,7 @@ function Router() {
         <ProtectedRoute path="/learn/:levelId" component={Level} />
         <ProtectedRoute path="/lesson/:lessonId" component={Lesson} />
         <ProtectedRoute path="/quiz/:quizId" component={Quiz} />
+        <ProtectedRoute path="/quizzes" component={Quizzes} />
         <ProtectedRoute path="/vocabulary" component={Vocabulary} />
         <ProtectedRoute path="/practice" component={Practice} />
         <ProtectedRoute path="/subscription" component={Subscription} />

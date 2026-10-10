@@ -14,6 +14,8 @@ import {
   quizAttemptsTable,
   quizResponsesTable,
   contentBlocksTable,
+  levelsTable,
+  studentProfilesTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import {
@@ -74,22 +76,85 @@ async function loadPublishedQuiz(id: number) {
   return quiz ?? null;
 }
 
+/**
+ * Has this student reached the level a quiz belongs to?
+ *
+ * Applied to reading a quiz as well as starting one. Gating only the attempt
+ * leaves the questions readable by anyone who opens /quiz/:id — for a level
+ * evaluation that is the answer key to a promotion gate.
+ *
+ * Compared on the level's `order`, never its code, so nothing assumes CEFR.
+ */
+async function isQuizLevelReached(userId: number, quizLevelId: number | null): Promise<boolean> {
+  if (quizLevelId === null) return true; // unassigned quizzes are not level-gated
+
+  const [quizLevel] = await db
+    .select({ order: levelsTable.order })
+    .from(levelsTable)
+    .where(eq(levelsTable.id, quizLevelId))
+    .limit(1);
+  if (!quizLevel) return true;
+
+  const [profile] = await db
+    .select({ currentLevelId: studentProfilesTable.currentLevelId })
+    .from(studentProfilesTable)
+    .where(eq(studentProfilesTable.userId, userId))
+    .limit(1);
+
+  // No placement yet: only the first level is open.
+  if (!profile?.currentLevelId) return quizLevel.order <= 1;
+
+  const [currentLevel] = await db
+    .select({ order: levelsTable.order })
+    .from(levelsTable)
+    .where(eq(levelsTable.id, profile.currentLevelId))
+    .limit(1);
+
+  return quizLevel.order <= (currentLevel?.order ?? 0);
+}
+
 // ─── Discovery ───────────────────────────────────────────────────────────────
 
 /** Published quizzes, with this student's best result so far. */
 router.get("/quizzes", requireAuth, async (req, res): Promise<void> => {
   const userId = req.session.userId!;
 
-  const quizzes = await db
-    .select()
-    .from(quizzesTable)
-    .where(and(eq(quizzesTable.status, "published"), isNull(quizzesTable.softDeletedAt)))
-    .orderBy(desc(quizzesTable.updatedAt));
+  const [published, attempts, profile] = await Promise.all([
+    db
+      .select()
+      .from(quizzesTable)
+      .where(and(eq(quizzesTable.status, "published"), isNull(quizzesTable.softDeletedAt)))
+      .orderBy(desc(quizzesTable.updatedAt)),
+    db.select().from(quizAttemptsTable).where(eq(quizAttemptsTable.userId, userId)),
+    db
+      .select({ currentLevelId: studentProfilesTable.currentLevelId })
+      .from(studentProfilesTable)
+      .where(eq(studentProfilesTable.userId, userId))
+      .limit(1)
+      .then((r) => r[0]),
+  ]);
 
-  const attempts = await db
-    .select()
-    .from(quizAttemptsTable)
-    .where(eq(quizAttemptsTable.userId, userId));
+  // A quiz belongs to a level, and a student should not be shown work from
+  // levels they have not reached — a C2 quiz in an A1 student's list is both
+  // confusing and a way to see content they have not unlocked. Ordered by the
+  // level's `order` rather than its code, so no CEFR naming is assumed.
+  const levels = await db
+    .select({ id: levelsTable.id, order: levelsTable.order })
+    .from(levelsTable);
+  const orderById = new Map(levels.map((l) => [l.id, l.order]));
+  const currentOrder = profile?.currentLevelId
+    ? orderById.get(profile.currentLevelId) ?? null
+    : null;
+
+  const quizzes = published.filter((q) => {
+    // Unassigned quizzes are not level-gated.
+    if (q.levelId === null) return true;
+    const quizOrder = orderById.get(q.levelId);
+    if (quizOrder === undefined) return true;
+    // No placement yet: only the very first level's quizzes are visible.
+    if (currentOrder === null) return quizOrder <= 1;
+    return quizOrder <= currentOrder;
+  });
 
   res.json({
     quizzes: quizzes.map((q) => {
@@ -101,6 +166,10 @@ router.get("/quizzes", requireAuth, async (req, res): Promise<void> => {
         titleAr: q.titleAr,
         description: q.description,
         descriptionAr: q.descriptionAr,
+        // A level evaluation is a progression gate, not something to start from
+        // a list — starting one is refused unless the level is complete. The
+        // client needs this to present the two differently.
+        kind: q.kind,
         levelId: q.levelId,
         timeLimitSec: q.timeLimitSec,
         maxAttempts: q.maxAttempts,
@@ -123,6 +192,15 @@ router.get("/quizzes/:id", requireAuth, async (req, res): Promise<void> => {
 
   const quiz = await loadPublishedQuiz(id);
   if (!quiz) { res.status(404).json({ error: "Quiz not found" }); return; }
+
+  // Refuse the content, not just the attempt: the blocks are the questions.
+  if (!(await isQuizLevelReached(req.session.userId!, quiz.levelId))) {
+    res.status(403).json({
+      error: "هذا الاختبار من مستوى لم تصل إليه بعد.",
+      code: "QUIZ_LEVEL_LOCKED",
+    });
+    return;
+  }
 
   const blocks = await db
     .select()
@@ -179,6 +257,17 @@ router.post("/quizzes/:id/attempts", requireAuth, async (req, res): Promise<void
     .limit(1);
 
   if (active) { res.json({ ...active, resumed: true }); return; }
+
+  // A quiz from a level the student has not reached is refused, not merely
+  // hidden. Filtering the list alone would leave /quiz/:id openable by anyone
+  // who guesses an id — the server decides what a student may attempt.
+  if (!(await isQuizLevelReached(userId, quiz.levelId))) {
+    res.status(403).json({
+      error: "هذا الاختبار من مستوى لم تصل إليه بعد.",
+      code: "QUIZ_LEVEL_LOCKED",
+    });
+    return;
+  }
 
   // A level evaluation is a gate, not an ordinary quiz: it opens only once the
   // student has worked through the level it closes. Checked here rather than in

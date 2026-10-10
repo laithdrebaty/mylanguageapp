@@ -32,6 +32,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/dashboard", label: "الرئيسية", icon: Home },
     { href: "/learn", label: "المنهج", icon: BookOpen },
+    { href: "/quizzes", label: "الاختبارات", icon: GraduationCap },
     { href: "/vocabulary", label: "المفردات", icon: BookMarked },
     { href: "/practice", label: "تدريب صوتي", icon: Mic },
     { href: "/profile", label: "حسابي", icon: UserIcon },
