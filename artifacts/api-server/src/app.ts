@@ -237,11 +237,31 @@ function failOpen(limiter: RequestHandler): RequestHandler {
 // below would cut every call off after about three minutes. It gets its own
 // budget instead, keyed by the signed-in user so classmates behind one school
 // or mobile-carrier NAT do not share it.
+//
+// BOTH polling paths belong here, not just /poll. `use-voice-call.ts` polls
+// /poll AND /sessions/:id/signals on the same one-second timer, so exempting
+// only the first left the second on the broad 200-per-15-minutes budget — which
+// is IP-keyed, so two students testing from one machine shared it and burned it
+// in about a minute and a half. What that looked like: every request 429, the
+// app reporting the server as asleep, and the call never ending — the 30-minute
+// cap is enforced when someone polls, so a 429'd poll means nothing closes the
+// session. One call sat "active" for two and a half hours.
 const PRACTICE_POLL_PATH = "/practice/poll";
+
+/** Matches /api/practice/sessions/:id/signals, the other one-second poll. */
+const PRACTICE_SIGNALS_RE = /^\/practice\/sessions\/\d+\/signals$/;
+
+function isPracticePoll(path: string): boolean {
+  return path === PRACTICE_POLL_PATH || PRACTICE_SIGNALS_RE.test(path);
+}
 
 const practicePollLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10),
-  limit: parseInt(process.env.RATE_LIMIT_PRACTICE_POLL ?? "1200", 10),
+  // Two polls a second now share this budget (status + signals), and a
+  // 15-minute window holds 900 seconds — so a single student in one continuous
+  // call needs ~1800. 1200 was sized for one poller and would cut a call off
+  // after ten minutes.
+  limit: parseInt(process.env.RATE_LIMIT_PRACTICE_POLL ?? "2400", 10),
   standardHeaders: "draft-7",
   legacyHeaders: false,
   store: makeRedisStore("rl:poll:"),
@@ -250,15 +270,32 @@ const practicePollLimiter = rateLimit({
   message: { error: "Too many requests, please try again later" },
 });
 
-// Broad limit: all API endpoints — protects against general abuse
+// Broad limit: all API endpoints — protects against general abuse.
+//
+// Keyed by the signed-in user, falling back to IP only for anonymous requests.
+// IP alone is wrong here for the same reason it was wrong for the poll limiter,
+// and worse in practice: the browser talks to Vite, which proxies to the API, so
+// EVERY signed-in user arrives as the web container's single address and shares
+// one 200-request budget. Two students in a call exhausted it and the app
+// reported the server as asleep — and the request that lost was whichever came
+// last, which made it look random rather than like a limit.
+//
+// The same collapse happens in production behind any shared NAT: a school or a
+// mobile carrier is one address for hundreds of students. Per-user is the unit
+// that actually matches "general abuse by one account".
 const apiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10), // 15 min
-  limit: parseInt(process.env.RATE_LIMIT_API ?? "200", 10),
+  limit: parseInt(process.env.RATE_LIMIT_API ?? "600", 10),
   standardHeaders: "draft-7",
   legacyHeaders: false,
   store: makeRedisStore("rl:api:"),
+  keyGenerator: (req) =>
+    req.session?.userId ? `user:${req.session.userId}` : ipKeyGenerator(req.ip ?? ""),
   // Relative to the /api mount below. Limited by practicePollLimiter instead.
-  skip: (req) => req.path === PRACTICE_POLL_PATH,
+  // `/healthz` is exempt: it is a liveness probe, and a probe answering 429 is
+  // read as "the server is down" by everything that calls it — which is how a
+  // rate limit came to be reported to students as the server waking up.
+  skip: (req) => isPracticePoll(req.path) || req.path === "/healthz",
   message: { error: "Too many requests, please try again later" },
 });
 
@@ -275,6 +312,16 @@ const authLimiter = rateLimit({
 
 app.use("/api", failOpen(apiLimiter));
 app.use(`/api${PRACTICE_POLL_PATH}`, failOpen(practicePollLimiter));
+// Signal reads are polled on the same timer, so they need the same per-user
+// budget. Mounted as a predicate because the path carries a session id.
+app.use("/api/practice/sessions", (req, res, next) => {
+  // `req.path` here is relative to this mount point.
+  if (/^\/\d+\/signals$/.test(req.path)) {
+    failOpen(practicePollLimiter)(req, res, next);
+    return;
+  }
+  next();
+});
 app.use("/api/auth/login", failOpen(authLimiter));
 app.use("/api/auth/register", failOpen(authLimiter));
 // Reset endpoints are brute-force targets: one guesses tokens, the other can be
