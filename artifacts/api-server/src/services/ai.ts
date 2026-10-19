@@ -33,7 +33,9 @@ export type AIFeature =
   | "pronunciation_evaluation"
   | "open_answer_evaluation"
   | "conversation_assist"
-  | "conversation_evaluation";
+  | "conversation_evaluation"
+  /** Opt-in evaluation of a student-to-student practice call. */
+  | "peer_call_analysis";
 
 /** Provider/model/token accounting attached to anything an AI produced. */
 export interface AIMeta {

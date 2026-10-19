@@ -19,8 +19,17 @@ export class AIProviderError extends Error {
   /** True when retrying the same request could plausibly succeed. */
   readonly retryable: boolean;
 
-  constructor(message: string, status: number, retryable: boolean) {
-    super(message);
+  constructor(
+    message: string,
+    status: number,
+    retryable: boolean,
+    options: { cause?: unknown } = {},
+  ) {
+    // The student-facing message stays generic on a transport failure, so the
+    // underlying cause is the only record of WHY the call never landed. Keep it
+    // on the error for the log; without it a one-off network blip is
+    // indistinguishable from a broken request shape.
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "AIProviderError";
     this.status = status;
     this.retryable = retryable;
@@ -98,6 +107,7 @@ async function postJson<T>(
       aborted ? `AI request timed out after ${timeoutMs}ms` : "Could not reach the AI provider",
       0,
       true,
+      { cause: err },
     );
   } finally {
     clearTimeout(timer);
@@ -281,6 +291,7 @@ export async function listModels(baseUrl: string, apiKey: string): Promise<Model
       aborted ? "Listing models timed out" : "Could not reach the AI provider",
       0,
       true,
+      { cause: err },
     );
   } finally {
     clearTimeout(timer);
