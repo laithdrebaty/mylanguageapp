@@ -25,6 +25,7 @@ import {
   type PracticePreferences,
   type PracticeSessionView,
   type ReportReason,
+  type CallEvaluation,
 } from "@/lib/practice-api";
 import { useVoiceCall } from "@/hooks/use-voice-call";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,21 @@ function mmss(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/**
+ * How far along each status is, so a stale poll cannot move the card backwards.
+ * Terminal states rank highest: nothing supersedes them.
+ */
+const STATUS_ORDER: Record<CallEvaluation["status"], number> = {
+  requested: 1,
+  consented: 2,
+  uploaded: 3,
+  analyzing: 4,
+  completed: 5,
+  declined: 5,
+  failed: 5,
+  expired: 5,
+};
+
 export default function Practice() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -109,6 +125,121 @@ export default function Practice() {
 
   const call = useVoiceCall();
   const startedForRef = useRef<number | null>(null);
+
+  // ── Opt-in evaluation ──────────────────────────────────────────────────────
+  //
+  // Recording has to begin DURING the call — there is no recording afterwards to
+  // reach for, by design. So asking for feedback mid-call starts the recorder,
+  // and the request itself is only created when the call ends and there is
+  // something to submit. The other student is asked separately, and nothing is
+  // uploaded until they agree.
+  const [wantsEvaluation, setWantsEvaluation] = useState(false);
+  const [evaluation, setEvaluation] = useState<CallEvaluation | null>(null);
+  const [pendingConsent, setPendingConsent] = useState<CallEvaluation | null>(null);
+  const [uploading, setUploading] = useState(false);
+  /**
+   * The real "is a request in flight" guard.
+   *
+   * It cannot be the `uploading` STATE: that state was both a dependency of the
+   * effects below and set by them, so `setUploading(true)` changed the deps,
+   * React ran the cleanup, `cancelled` became true, and the `finally` then
+   * skipped clearing the flag — leaving the screen on "جارٍ الإرسال…" forever
+   * while no request had been made at all. A ref does not re-trigger the effect,
+   * so the guard and the display are kept separate.
+   */
+  const inFlightRef = useRef(false);
+  /**
+   * Evaluation ids whose upload has already been attempted.
+   *
+   * Without this the upload effect is an unbounded retry loop: the `catch`
+   * swallows the failure and the `finally` releases the in-flight guard, but
+   * `status` is still `consented` and the blob is still in memory — so the
+   * effect's own conditions are met again and it fires immediately. One failed
+   * upload became 104 requests in a few seconds, which exhausted the student's
+   * rate-limit budget and locked them out of logging in.
+   *
+   * One attempt per evaluation. A retry is a deliberate action, not a spin.
+   */
+  const uploadAttemptedRef = useRef<Set<number>>(new Set());
+  /**
+   * Evaluations the student has dismissed with "إخفاء".
+   *
+   * Dismissing only cleared local state, so the next 15-second poll re-selected
+   * the same finished evaluation and the card reappeared — and because it was
+   * still occupying the card, a NEW call's result had nowhere to go. Remembered
+   * here so a dismissal sticks for the life of the page.
+   */
+  const dismissedRef = useRef<Set<number>>(new Set());
+  const endedSessionRef = useRef<PracticeSessionView | null>(null);
+
+  /** Mid-call: start capturing both voices, or say plainly that we cannot. */
+  const askForEvaluation = () => {
+    if (call.startRecording()) {
+      setWantsEvaluation(true);
+      toast({
+        title: "سيتم تسجيل هذه المحادثة",
+        description: "سنطلب موافقة شريكك بعد انتهاء المكالمة. لا يُرسل أي تسجيل قبل موافقته.",
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: "التسجيل غير مدعوم",
+        description: "متصفحك لا يدعم تسجيل المكالمة، لذلك لا يمكن تقييمها.",
+      });
+    }
+  };
+
+  /** Any request waiting on THIS student's answer, found on load and on poll. */
+  const refreshEvaluations = useCallback(async () => {
+    try {
+      const { evaluations } = await practiceApi.listEvaluations();
+      setPendingConsent(evaluations.find((e) => e.awaitingYourConsent) ?? null);
+      // Keep whichever of our own is still in flight, so the result appears
+      // without the student having to go looking for it.
+      setEvaluation((prev) => {
+        // A finished evaluation is history. Re-adopting one keeps the card
+        // showing an old call's feedback and leaves no room for the next one;
+        // only work still in progress is worth pulling back in unprompted.
+        // NOT limited to evaluations this student requested. Both participants
+        // get their own feedback — that is the entire point of the feature —
+        // and filtering on `isRequester` meant the person who consented never
+        // saw a card at all, even though their feedback was sitting ready on
+        // the server. The one state to leave alone is `requested`, which for
+        // the other side means "you still have to answer": that is the consent
+        // card's job, not this one's.
+        const live = evaluations.filter(
+          (e) =>
+            !dismissedRef.current.has(e.id) &&
+            !e.awaitingYourConsent &&
+            (e.isRequester
+              ? e.status === "requested" ||
+                e.status === "consented" ||
+                e.status === "uploaded" ||
+                e.status === "analyzing" ||
+                e.status === "completed"
+              : // The consenting side has nothing to do while the uploader
+                // uploads, so they are shown the card once there is something
+                // in it for them.
+                e.status === "analyzing" || e.status === "completed"),
+        );
+        const fresh =
+          evaluations.find((e) => prev && e.id === prev.id && !dismissedRef.current.has(e.id)) ??
+          // Newest first, so a fresh call's result supersedes an older one.
+          live.sort((a, b) => b.id - a.id)[0];
+        if (!fresh) return prev && dismissedRef.current.has(prev.id) ? null : prev;
+        // The poll must not drag the card BACKWARDS. A 15-second poll that
+        // still says `consented` was issued before the upload finished, and
+        // applying it after the local state reached `uploaded` made the card
+        // flip between "sending" and "sent" every poll. Later state wins.
+        if (prev && prev.id === fresh.id && STATUS_ORDER[fresh.status] < STATUS_ORDER[prev.status]) {
+          return prev;
+        }
+        return fresh;
+      });
+    } catch {
+      // A failed poll here costs nothing; the next one catches up.
+    }
+  }, []);
 
   const profile = data?.profile ?? null;
   const limits = data?.limits;
@@ -156,10 +287,164 @@ export default function Practice() {
     if (session === null || session.status === "ended" || session.status === "declined") {
       if (startedForRef.current !== null) {
         startedForRef.current = null;
+        // Stop the recorder BEFORE reset tears the audio graph down, so the
+        // blob is finalised rather than lost with the context.
+        if (call.recording) call.stopRecording();
         call.reset();
       }
     }
   }, [session, call]);
+
+  // Hold on to the ended call: the evaluation is requested against its id, and
+  // `session` is cleared as soon as it ends.
+  useEffect(() => {
+    if (session?.status === "ended") endedSessionRef.current = session;
+  }, [session]);
+
+  // The recording is finished and the student asked for feedback: create the
+  // request, then upload. Nothing reaches the server until the partner agrees,
+  // so this only stages it.
+  useEffect(() => {
+    const blob = call.recordedBlob;
+    const ended = endedSessionRef.current;
+    // `evaluation` alone is too strong a guard: any evaluation still on screen —
+    // including a COMPLETED one from an earlier call — blocked the next call's
+    // request entirely, so a second call silently produced nothing. Only an
+    // evaluation OF THIS CALL should stop a new request for it.
+    if (!wantsEvaluation || !ended || inFlightRef.current) return;
+    if (evaluation && evaluation.sessionId === ended.sessionId) return;
+
+    // The call is over and the recorder has stopped, but produced nothing. Say
+    // so: silently doing nothing here is indistinguishable from the feature
+    // being broken, and that is precisely how the first version failed.
+    if (!blob) {
+      if (!call.recording && call.phase !== "connected") {
+        setWantsEvaluation(false);
+        toast({
+          variant: "destructive",
+          title: "لم يُحفظ تسجيل المحادثة",
+          description: "تعذّر تسجيل المكالمة، لذلك لا يمكن طلب تقييم لها.",
+        });
+      }
+      return;
+    }
+
+    let cancelled = false;
+    inFlightRef.current = true;
+    setUploading(true);
+    void (async () => {
+      try {
+        const { evaluation: created } = await practiceApi.requestEvaluation(ended.sessionId);
+        if (cancelled) return;
+        setEvaluation(created);
+        toast({
+          title: "تم إرسال الطلب",
+          description: "سنخبر شريكك، ولن يُرسل التسجيل إلا بعد موافقته.",
+        });
+      } catch (err) {
+        if (cancelled) return;
+        // Both students asked for the same call. Only one request can exist, so
+        // the loser is not in an error state — they are the person being asked
+        // to consent, and the consent card is already on its way to them from
+        // the poll. Telling them something failed would be wrong.
+        if (err instanceof PracticeError && err.code === "ALREADY_REQUESTED") {
+          setWantsEvaluation(false);
+          // Their own recording is redundant: the other side is uploading theirs.
+          call.discardRecording();
+          void refreshEvaluations();
+          toast({
+            title: "طلب شريكك التقييم أيضاً",
+            description: "سيظهر لك طلب الموافقة — وافق عليه ليُقيَّم التسجيل.",
+          });
+          return;
+        }
+        const message =
+          err instanceof PracticeError ? err.message : "تعذّر طلب التقييم.";
+        toast({ variant: "destructive", title: "لم نتمكن من طلب التقييم", description: message });
+        setWantsEvaluation(false);
+        call.discardRecording();
+      } finally {
+        // Unconditional: the work really has finished, whether or not this
+        // effect instance was superseded while it ran.
+        inFlightRef.current = false;
+        setUploading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // `uploading` is deliberately NOT a dependency: it is set inside this
+    // effect, so depending on it makes the effect cancel itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call, wantsEvaluation, evaluation, toast, refreshEvaluations]);
+
+  // Once both sides have agreed the server moves the row to `consented`, which
+  // is the signal that audio may finally be sent.
+  useEffect(() => {
+    if (evaluation?.status !== "consented") return;
+    const blob = call.recordedBlob;
+    if (!blob || inFlightRef.current) return;
+    if (uploadAttemptedRef.current.has(evaluation.id)) return;
+
+    let cancelled = false;
+    // Claimed BEFORE the request, so a failure cannot re-enter here.
+    uploadAttemptedRef.current.add(evaluation.id);
+    inFlightRef.current = true;
+    setUploading(true);
+    void (async () => {
+      try {
+        const begun = await practiceApi.beginRecordingUpload(evaluation.id, {
+          contentType: blob.type || "audio/webm",
+          sizeBytes: blob.size,
+          durationSec: call.recordedSeconds || null,
+        });
+        const put = await fetch(begun.upload.url, {
+          method: "PUT",
+          body: blob,
+          headers: begun.upload.headers ?? { "Content-Type": blob.type || "audio/webm" },
+        });
+        if (!put.ok) throw new Error(`upload failed: ${put.status}`);
+        const { evaluation: updated } = await practiceApi.completeRecordingUpload(
+          evaluation.id,
+          begun.mediaId,
+          call.recordedStereo,
+        );
+        if (cancelled) return;
+        setEvaluation(updated);
+        // The audio has left the browser; there is no reason to keep a copy.
+        call.discardRecording();
+        toast({ title: "تم إرسال التسجيل", description: "سيظهر التقييم بعد قليل." });
+      } catch {
+        if (!cancelled) {
+          // The recording is deliberately NOT discarded: it is the only copy,
+          // and keeping it is what makes the retry button below possible.
+          toast({
+            variant: "destructive",
+            title: "تعذّر إرسال التسجيل",
+            description: "اضغط \"أعد إرسال التسجيل\" للمحاولة مرة أخرى.",
+          });
+        }
+      } finally {
+        inFlightRef.current = false;
+        setUploading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evaluation, call, toast]);
+
+  // Pick up consent requests and finished analyses. Slow on purpose: analysis
+  // is ASR plus a model pass, so there is nothing to see for a while.
+  useEffect(() => {
+    if (!optedIn) return;
+    void refreshEvaluations();
+    const id = window.setInterval(() => void refreshEvaluations(), 15_000);
+    return () => window.clearInterval(id);
+  }, [optedIn, refreshEvaluations]);
 
   // A call the server has ended is over here too, whatever the peer connection
   // still thinks.
@@ -231,11 +516,62 @@ export default function Practice() {
   /** Immediate and unilateral. The peer connection closes before the request. */
   const endCall = (reason: "ended_by_user" | "declined" = "ended_by_user") => {
     const id = session?.sessionId;
+    // Remember the call before `session` is cleared. The effect that captures
+    // this only fires on a status of "ended", which arrives from the server on
+    // the NEXT poll — and this clears `session` before that poll happens, so
+    // hanging up yourself never recorded the call the evaluation is requested
+    // against. The partner hanging up went through the poll and did work, which
+    // is what made this look intermittent.
+    if (session && reason !== "declined") endedSessionRef.current = session;
     call.hangUp();
     setSession(null);
     setQueued(false);
     if (id !== undefined) void practiceApi.end(id, reason).catch(() => {});
   };
+
+  /**
+   * Tell the SERVER the call is over when the page goes away.
+   *
+   * `useVoiceCall` already closes the peer connection on unmount, but that is
+   * local only — the server went on believing the call was live. Since the
+   * one-live-per-person index refuses to match anyone who is already in a call,
+   * a closed tab locked BOTH students out of voice practice with "you are
+   * already in a call", and the only thing that eventually freed them was the
+   * sweeper, 35 minutes later.
+   *
+   * `sendBeacon` because a normal fetch is cancelled as the page unloads;
+   * beacons are queued by the browser and survive it. `pagehide` rather than
+   * `beforeunload`, which mobile Safari does not reliably fire.
+   */
+  useEffect(() => {
+    const sessionId = session?.sessionId;
+    if (sessionId === undefined) return;
+
+    const release = () => {
+      const url = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/practice/sessions/${sessionId}/end`;
+      const body = JSON.stringify({ reason: "ended_by_user" });
+      if (typeof navigator.sendBeacon === "function") {
+        navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+      } else {
+        // `keepalive` is the fetch equivalent, honoured during unload.
+        void fetch(url, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener("pagehide", release);
+    return () => {
+      window.removeEventListener("pagehide", release);
+      // Navigating away inside the app unmounts this page without a pagehide,
+      // and leaves the same stuck session behind.
+      release();
+    };
+  }, [session?.sessionId]);
 
   const blockPartner = async () => {
     if (!session) return;
@@ -307,6 +643,56 @@ export default function Practice() {
           onEnd={() => endCall()}
           onBlock={blockPartner}
           onReport={() => setReportOpen(true)}
+          recording={call.recording}
+          onAskForEvaluation={askForEvaluation}
+        />
+      )}
+
+      {/* The other student asked for feedback on a call we were in. */}
+      {pendingConsent && (
+        <ConsentCard
+          evaluation={pendingConsent}
+          onAnswer={async (agree) => {
+            try {
+              await practiceApi.respondToEvaluation(pendingConsent.id, agree);
+              setPendingConsent(null);
+              toast({
+                title: agree ? "تمت الموافقة" : "تم الرفض",
+                description: agree
+                  ? "سيُقيَّم التسجيل ويظهر لك رأي المعلّم عن كلامك فقط."
+                  : "لن يُرسل أي تسجيل لهذه المكالمة.",
+              });
+            } catch {
+              toast({ variant: "destructive", title: "تعذّر إرسال ردّك" });
+            }
+          }}
+        />
+      )}
+
+      {/* Our own evaluation: waiting, running, or done. */}
+      {evaluation && !inCall && !ringing && (
+        <EvaluationCard
+          evaluation={evaluation}
+          uploading={uploading}
+          canRetryUpload={
+            // Only the uploader can retry — they hold the only copy. The blob
+            // check already implies this; stated so it survives a refactor.
+            evaluation.isRequester &&
+            evaluation.status === "consented" &&
+            call.recordedBlob !== null &&
+            !uploading
+          }
+          onRetryUpload={() => {
+            // Clearing the attempt marker lets the upload effect run once more.
+            uploadAttemptedRef.current.delete(evaluation.id);
+            setEvaluation({ ...evaluation });
+          }}
+          onDismiss={() => {
+            dismissedRef.current.add(evaluation.id);
+            setEvaluation(null);
+            setWantsEvaluation(false);
+            call.discardRecording();
+          }}
         />
       )}
 
@@ -639,6 +1025,174 @@ function RingingCard({
   );
 }
 
+/**
+ * The other student asked for feedback on a call we were both in.
+ *
+ * Deliberately blunt about what agreeing means. The recording contains this
+ * student's own voice, the request came from someone they spoke to once, and a
+ * vague "allow feedback?" would not be informed consent. Refusing is a plain
+ * button, not a hidden link, and it is final.
+ */
+function ConsentCard({
+  evaluation,
+  onAnswer,
+}: {
+  evaluation: CallEvaluation;
+  onAnswer: (agree: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const answer = (agree: boolean) => {
+    setBusy(true);
+    onAnswer(agree);
+  };
+
+  return (
+    <Card className="border-2 border-amber-300 bg-amber-50/60">
+      <CardContent className="p-6 space-y-4">
+        <div className="space-y-2">
+          <p className="font-bold">طلب شريكك تقييماً لمحادثتكما</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            سجّل شريكك المحادثة ويريد إرسالها لتقييم لغته. لأنّ صوتك موجود في
+            التسجيل، لا يمكن إرسالها إلا بموافقتك.
+          </p>
+          <ul className="text-sm text-muted-foreground list-disc ps-5 space-y-1">
+            <li>سيحصل كلٌّ منكما على ملاحظات عن كلامه هو فقط.</li>
+            <li>لن يرى شريكك أي ملاحظات عنك، ولن ترى ملاحظاته.</li>
+            <li>يُحذف التسجيل بعد التحليل، ويبقى النص المكتوب فقط.</li>
+            <li>إن رفضت، لا يُرسل شيء — والرفض نهائي.</li>
+          </ul>
+        </div>
+        <div className="flex gap-2">
+          <Button disabled={busy} onClick={() => answer(true)}>
+            أوافق
+          </Button>
+          <Button variant="outline" disabled={busy} onClick={() => answer(false)}>
+            أرفض
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Our own evaluation, from "waiting for them" through to the feedback. */
+function EvaluationCard({
+  evaluation,
+  uploading,
+  canRetryUpload,
+  onRetryUpload,
+  onDismiss,
+}: {
+  evaluation: CallEvaluation;
+  uploading: boolean;
+  canRetryUpload: boolean;
+  onRetryUpload: () => void;
+  onDismiss: () => void;
+}) {
+  const feedback = evaluation.feedbackAr || evaluation.feedback;
+  const summary = evaluation.summaryAr || evaluation.summary;
+
+  // Worded per side: the person who asked is waiting on their partner, while
+  // the person who agreed is waiting on the uploader. The same sentence shown
+  // to both would be wrong for one of them.
+  const waiting: Partial<Record<CallEvaluation["status"], string>> = evaluation.isRequester
+    ? {
+        requested: "بانتظار موافقة شريكك على إرسال التسجيل.",
+        consented: "وافق شريكك — يتم إرسال التسجيل.",
+        uploaded: "تم إرسال التسجيل، وسيُحلّل قريباً.",
+        analyzing: "يتم تحليل المحادثة الآن…",
+      }
+    : {
+        consented: "بانتظار إرسال التسجيل من شريكك.",
+        uploaded: "تم إرسال التسجيل، وسيُحلّل قريباً.",
+        analyzing: "يتم تحليل المحادثة الآن…",
+      };
+
+  return (
+    <Card className="border-2">
+      <CardContent className="p-6 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <p className="font-bold">تقييم المحادثة</p>
+          <Button variant="ghost" size="sm" onClick={onDismiss}>
+            إخفاء
+          </Button>
+        </div>
+
+        {uploading && (
+          <p className="text-sm text-muted-foreground">جارٍ الإرسال…</p>
+        )}
+
+        {waiting[evaluation.status] && !uploading && (
+          <p className="text-sm text-muted-foreground">{waiting[evaluation.status]}</p>
+        )}
+
+        {/* The upload is attempted once. If it failed, the recording is still
+            in memory and this is the only way to send it — so the way out is a
+            button the student presses, not an automatic retry. */}
+        {canRetryUpload && (
+          <Button size="sm" variant="outline" onClick={onRetryUpload}>
+            أعد إرسال التسجيل
+          </Button>
+        )}
+
+        {evaluation.status === "declined" && (
+          <p className="text-sm text-muted-foreground">
+            {evaluation.isRequester
+              ? "لم يوافق شريكك على إرسال التسجيل، لذلك لن تُقيَّم هذه المحادثة."
+              : "لم تتم الموافقة على إرسال التسجيل، لذلك لن تُقيَّم هذه المحادثة."}
+          </p>
+        )}
+
+        {evaluation.status === "expired" && (
+          <p className="text-sm text-muted-foreground">
+            لم يردّ شريكك على الطلب في الوقت المحدد.
+          </p>
+        )}
+
+        {evaluation.status === "failed" && (
+          <p className="text-sm text-destructive">
+            {evaluation.error ?? "تعذّر تقييم هذه المحادثة."}
+          </p>
+        )}
+
+        {evaluation.status === "completed" && (
+          <div className="space-y-3">
+            {/* Said rather than hidden: the speakers are told apart by voice,
+                not identified, so the attribution can be wrong. */}
+            {evaluation.attributionUncertain && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                ملاحظة: التمييز بين المتحدثين في التسجيل غير مؤكد تماماً، لذلك قد
+                تكون هذه الملاحظات عن كلام شريكك بدلاً من كلامك.
+              </p>
+            )}
+            {feedback && (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">ملاحظات عن كلامك</p>
+                <p className="text-sm leading-relaxed" dir="rtl">
+                  {feedback}
+                </p>
+              </div>
+            )}
+            {summary && (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">عن المحادثة</p>
+                <p className="text-sm text-muted-foreground leading-relaxed" dir="rtl">
+                  {summary}
+                </p>
+              </div>
+            )}
+            {!feedback && !summary && (
+              <p className="text-sm text-muted-foreground">
+                لم تتوفّر ملاحظات لهذه المحادثة.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function CallCard({
   session,
   phase,
@@ -650,6 +1204,8 @@ function CallCard({
   onEnd,
   onBlock,
   onReport,
+  recording,
+  onAskForEvaluation,
 }: {
   session: PracticeSessionView;
   phase: string;
@@ -661,6 +1217,8 @@ function CallCard({
   onEnd: () => void;
   onBlock: () => void;
   onReport: () => void;
+  recording: boolean;
+  onAskForEvaluation: () => void;
 }) {
   return (
     <Card className="border-2 border-primary">
@@ -703,6 +1261,17 @@ function CallCard({
         </div>
 
         <div className="flex flex-wrap gap-2 justify-center border-t border-border pt-4">
+          {phase === "connected" && !recording && (
+            <Button variant="ghost" size="sm" onClick={onAskForEvaluation}>
+              اطلب تقييماً لهذه المحادثة
+            </Button>
+          )}
+          {recording && (
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+              يتم التسجيل — بانتظار موافقة شريكك بعد المكالمة
+            </span>
+          )}
           <Button variant="ghost" size="sm" className="text-destructive" onClick={onReport}>
             <ShieldAlert className="h-4 w-4 ml-1.5" />
             إبلاغ عن هذا الشخص
