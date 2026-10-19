@@ -590,7 +590,21 @@ function BlockEditor({ block, onUpdate, lessonId, isEditable, qc }: any) {
       )}
 
       {(block.type === "speaking_prompt") && (
-        <SpeakingEditor block={block} onSave={updateExercise} saving={saving} isEditable={isEditable} />
+        <SpeakingEditor
+          block={block}
+          onSave={updateExercise}
+          // Carries the shared Required / Active checkboxes edited above, which
+          // this type's own Save button is otherwise the only way to persist.
+          onSaveBlock={(patch: Record<string, unknown>) =>
+            onUpdate({
+              isRequired: localBlock.isRequired,
+              isActive: localBlock.isActive,
+              ...patch,
+            })
+          }
+          saving={saving}
+          isEditable={isEditable}
+        />
       )}
 
       {block.type === "pronunciation_guide" && (
@@ -792,18 +806,47 @@ function MCQEditor({ exercise, options: initialOptions, blockId, onSave, saving,
   );
 }
 
-function SpeakingEditor({ block, onSave, saving, isEditable }: any) {
-  const [prompt, setPrompt] = useState(block.exercise?.prompt ?? block.block?.prompt ?? "");
-  const [promptAr, setPromptAr] = useState(block.exercise?.promptAr ?? "");
-  const [instructions, setInstructions] = useState(block.exercise?.instructionsText ?? "");
+/**
+ * A speaking block keeps its text in two places, and both are needed.
+ *
+ * The player reads `prompt`/`promptAr` off the block, the way it does for every
+ * other block type; the grader reads the exercise row. Saving only the exercise
+ * — which this editor used to do — left the student looking at a screen with no
+ * prompt on it at all.
+ *
+ * This editor replaces the generic "Save Block" button for this type, so its
+ * save has to carry the shared block fields too (Required / Active, edited
+ * above) or those checkboxes would have no way to persist.
+ */
+function SpeakingEditor({ block, onSave, onSaveBlock, saving, isEditable }: any) {
+  const [prompt, setPrompt] = useState(block.prompt ?? block.exercise?.prompt ?? "");
+  const [promptAr, setPromptAr] = useState(block.promptAr ?? block.exercise?.promptAr ?? "");
+  const [instructions, setInstructions] = useState(
+    block.instructions ?? block.exercise?.instructionsText ?? "",
+  );
   const [modelAnswer, setModelAnswer] = useState(block.exercise?.modelAnswer ?? "");
   const [expectedConcepts, setExpectedConcepts] = useState(block.exercise?.expectedConcepts ?? "");
 
-  const submit = () => onSave({
-    exerciseType: "speaking", question: prompt, prompt, promptAr,
-    instructionsText: instructions, modelAnswer, expectedConcepts,
-    correctOptionId: "_speaking_",
-  });
+  // Adopt server state when the block changes underneath us, matching
+  // BlockEditor — otherwise the form keeps showing a stale prompt after a
+  // refetch.
+  useEffect(() => {
+    setPrompt(block.prompt ?? block.exercise?.prompt ?? "");
+    setPromptAr(block.promptAr ?? block.exercise?.promptAr ?? "");
+    setInstructions(block.instructions ?? block.exercise?.instructionsText ?? "");
+    setModelAnswer(block.exercise?.modelAnswer ?? "");
+    setExpectedConcepts(block.exercise?.expectedConcepts ?? "");
+  }, [block.id, block.updatedAt]);
+
+  // Block first: if the exercise write fails, the student still sees a prompt.
+  const submit = async () => {
+    await onSaveBlock({ prompt, promptAr, instructions });
+    await onSave({
+      exerciseType: "speaking", question: prompt, prompt, promptAr,
+      instructionsText: instructions, modelAnswer, expectedConcepts,
+      correctOptionId: "_speaking_",
+    });
+  };
 
   return (
     <div className="space-y-3">
