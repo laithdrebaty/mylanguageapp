@@ -28,6 +28,12 @@ export const AI_TASKS = [
   "feedback",
   "weakness_analysis",
   "transcription",
+  /**
+   * One pass over a diarized peer-call transcript. Its own task rather than
+   * part of `feedback`: the most expensive unit in the product, so it needs its
+   * own per-plan allowance and its own off switch.
+   */
+  "peer_call_analysis",
 ] as const;
 
 export type AITask = (typeof AI_TASKS)[number];
@@ -131,8 +137,21 @@ export const aiPlanPoliciesTable = pgTable(
     id: serial("id").primaryKey(),
     planCode: text("plan_code").notNull(),
     task: text("task", { enum: AI_TASKS }).notNull(),
-    /** Requests per rolling day. 0 = denied, -1 = unlimited. */
+    /** Requests per rolling day. 0 = denied, -1 = unlimited. Burst control. */
     dailyLimit: integer("daily_limit").notNull().default(0),
+    /**
+     * Requests per calendar month — the unit the plans are actually sold in.
+     * -1 unlimited, 0 denied, null = fall back to the daily limit alone.
+     */
+    monthlyLimit: integer("monthly_limit"),
+    /**
+     * Conversation minutes per calendar month.
+     *
+     * Conversation cost is driven by duration, not by how many times the model
+     * was called, so a request count cannot express "ten minutes per lesson".
+     * Only meaningful for duration-based tasks.
+     */
+    monthlyMinutes: integer("monthly_minutes"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()

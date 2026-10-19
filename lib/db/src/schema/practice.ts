@@ -9,8 +9,10 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { real } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
+import { mediaAssetsTable } from "./cms";
 
 /**
  * Student-to-student voice practice (spec section 11).
@@ -268,3 +270,112 @@ export const practiceSignalsTable = pgTable(
 );
 
 export type PracticeSignal = typeof practiceSignalsTable.$inferSelect;
+
+
+/**
+ * Opt-in evaluation of one peer call.
+ *
+ * The call itself is not recorded — that is a property of the feature, not a
+ * gap. So feedback on a call can only exist if the students choose to produce
+ * a recording for it, and BOTH of them have to agree before any audio is
+ * accepted: one person cannot have the other's voice analysed.
+ *
+ * Kept out of `practiceSessionsTable` on purpose. Consent is per person and
+ * needs a timestamp per person; almost no call is ever evaluated, so these
+ * columns would be null on nearly every session row; and a session row is read
+ * once a second per participant for the length of a call, which is no place to
+ * park a transcript.
+ */
+export const practiceCallEvaluationsTable = pgTable(
+  "practice_call_evaluations",
+  {
+    id: serial("id").primaryKey(),
+
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => practiceSessionsTable.id, { onDelete: "cascade" }),
+
+    /** Who asked. The other participant still has to agree. */
+    requestedBy: integer("requested_by")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+
+    status: text("status", {
+      enum: [
+        "requested",
+        "consented",
+        "declined",
+        "uploaded",
+        "analyzing",
+        "completed",
+        "failed",
+        "expired",
+      ],
+    })
+      .notNull()
+      .default("requested"),
+
+    // Per person and timestamped, because "they both agreed" has to still be
+    // answerable months later.
+    requesterConsentedAt: timestamp("requester_consented_at", { withTimezone: true }),
+    partnerConsentedAt: timestamp("partner_consented_at", { withTimezone: true }),
+
+    /**
+     * The uploaded recording. Cleared once the transcript exists: keeping the
+     * audio would turn an opt-in evaluation into a recording archive.
+     */
+    mediaAssetId: integer("media_asset_id").references(() => mediaAssetsTable.id, {
+      onDelete: "set null",
+    }),
+
+    /**
+     * True when the recording has the uploader's own microphone on one channel
+     * and the peer on the other. Attribution is then exact; false means it had
+     * to be guessed and the student is told so.
+     */
+    channelSeparated: boolean("channel_separated").notNull().default(false),
+
+    /** Diarized turns: `[{ speaker, text, start, end }]`. */
+    transcript: jsonb("transcript"),
+
+    /**
+     * Which provider label ("A"/"B") was taken to be the requester. A guess —
+     * diarization labels nobody — so it is shown as an attribution that may be
+     * wrong rather than as fact.
+     */
+    requesterSpeakerLabel: text("requester_speaker_label"),
+    speakerMappingConfidence: real("speaker_mapping_confidence"),
+
+    // Each participant reads only their own.
+    requesterFeedbackAr: text("requester_feedback_ar"),
+    requesterFeedback: text("requester_feedback"),
+    partnerFeedbackAr: text("partner_feedback_ar"),
+    partnerFeedback: text("partner_feedback"),
+
+    /** Shared, non-attributed observations about the conversation. */
+    summaryAr: text("summary_ar"),
+    summary: text("summary"),
+
+    durationSeconds: integer("duration_seconds"),
+    error: text("error"),
+
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => ({
+    // One live evaluation per call. A declined or failed attempt leaves the
+    // predicate, so it does not block a fresh request.
+    oneLive: uniqueIndex("practice_call_evaluations_one_live")
+      .on(table.sessionId)
+      .where(sql`${table.status} IN ('requested', 'consented', 'uploaded', 'analyzing')`),
+    sessionIdx: index("practice_call_evaluations_session_idx").on(table.sessionId),
+    requestedByIdx: index("practice_call_evaluations_requested_by_idx").on(
+      table.requestedBy,
+      table.requestedAt,
+    ),
+  }),
+);
+
+export type PracticeCallEvaluation = typeof practiceCallEvaluationsTable.$inferSelect;
