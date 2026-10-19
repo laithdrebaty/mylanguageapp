@@ -26,6 +26,8 @@ import { requireAdmin } from "../middlewares/auth";
 import {
   getAdminConfig,
   getUsageSummary,
+  getUsageTotals,
+  getUsageByUser,
   encryptSecret,
   decryptSecret,
   keyHint,
@@ -94,7 +96,15 @@ router.get("/admin/ai/config", requireAdmin, async (_req, res): Promise<void> =>
 
 router.get("/admin/ai/usage", requireAdmin, async (req, res): Promise<void> => {
   const days = Math.min(365, Math.max(1, parseInt((req.query.days as string) ?? "30", 10)));
-  res.json({ days, rows: await getUsageSummary(days) });
+  // Three views of the same window: what each task costs, what the whole
+  // product costs, and which students cost the most. The last is what says
+  // whether the per-plan limits are actually binding.
+  const [rows, totals, byUser] = await Promise.all([
+    getUsageSummary(days),
+    getUsageTotals(days),
+    getUsageByUser(days, 20),
+  ]);
+  res.json({ days, rows, totals, byUser });
 });
 
 // ─── Global settings ──────────────────────────────────────────────────────────

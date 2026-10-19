@@ -122,12 +122,40 @@ export interface UsageRow {
   cost_usd: number;
 }
 
+/** Headline figures for the window. */
+export interface UsageTotals {
+  total_cost_usd: number;
+  calls: number;
+  failures: number;
+  active_users: number;
+  /** What the cost model predicted. */
+  avg_cost_usd: number;
+  /** What an unbound quota looks like. Compare against the plan price. */
+  max_cost_usd: number;
+}
+
+/** Spend for one student, worst first. */
+export interface UsageByUser {
+  user_id: number;
+  email: string | null;
+  name: string | null;
+  plan_code: string;
+  calls: number;
+  cost_usd: number;
+  tokens: number;
+}
+
 // ─── Calls ────────────────────────────────────────────────────────────────────
 
 export const getAiConfig = () => request<AiConfig>("GET", "/admin/ai/config");
 
 export const getAiUsage = (days = 30) =>
-  request<{ days: number; rows: UsageRow[] }>("GET", `/admin/ai/usage?days=${days}`);
+  request<{
+    days: number;
+    rows: UsageRow[];
+    totals: UsageTotals;
+    byUser: UsageByUser[];
+  }>("GET", `/admin/ai/usage?days=${days}`);
 
 export const updateAiSettings = (patch: {
   enabled?: boolean;
