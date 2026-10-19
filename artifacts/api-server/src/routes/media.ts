@@ -25,6 +25,10 @@ import {
 
 const router: IRouter = Router();
 
+// `practice_call` is deliberately absent: a call recording holds a second
+// student's voice, so it is only accepted once both participants have consented
+// — which this generic endpoint cannot check. Those uploads go through
+// POST /practice/evaluations/:id/recording instead.
 const STUDENT_PURPOSES = new Set<MediaPurpose>(["lesson_activity", "quiz_response"]);
 
 /** Map a service-level refusal onto the right status code. */

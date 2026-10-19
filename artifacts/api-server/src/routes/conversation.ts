@@ -22,6 +22,7 @@ import {
   ConversationUnavailableError,
 } from "../services/conversation";
 import { assertUsableRecording, MediaValidationError } from "../services/media";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -51,6 +52,16 @@ function handleError(err: unknown, res: import("express").Response): void {
     // A spent quota is the student's allowance, not a fault — 429. Anything
     // else here is the deployment's problem, not the request's.
     const status = err.reason.startsWith("AI_QUOTA") ? 429 : 503;
+    if (status === 503) {
+      // The student gets a vague message by design, so this is the only place
+      // the real cause is recorded. A transport failure carries its cause from
+      // the provider adapter: without it, a one-off network blip and a
+      // malformed request look identical from the logs.
+      logger.error(
+        { reason: err.reason, err, cause: err.cause },
+        "conversation unavailable",
+      );
+    }
     res.status(status).json({ error: err.message, code: err.reason });
     return;
   }
