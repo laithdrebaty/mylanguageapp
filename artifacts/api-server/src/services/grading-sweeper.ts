@@ -34,6 +34,12 @@ import {
   learningActivityAttemptsTable,
 } from "@workspace/db";
 import { gradeQuizAttempt, gradeSpeakingActivity, gradeLessonActivity } from "./grading-runner";
+import {
+  expireStaleEvaluations,
+  pendingAnalysisIds,
+  analyseEvaluation,
+} from "./practice-evaluation";
+import { closeAbandonedSessions } from "./practice";
 import { logger } from "../lib/logger";
 
 /**
@@ -122,6 +128,7 @@ export async function sweepStalePending(): Promise<SweepResult> {
     .select({
       id: learningActivityAttemptsTable.id,
       mediaAssetId: learningActivityAttemptsTable.mediaAssetId,
+      activityType: learningActivityAttemptsTable.activityType,
       responseText: learningActivityAttemptsTable.responseText,
     })
     .from(learningActivityAttemptsTable)
@@ -147,7 +154,11 @@ export async function sweepStalePending(): Promise<SweepResult> {
       .where(eq(learningActivityAttemptsTable.id, activity.id));
 
     try {
-      if (activity.mediaAssetId) {
+      // An open-ended answer is graded against the rubric whichever way it was
+      // given: gradeLessonActivity transcribes the recording first. Routing it
+      // by "has audio" alone sent spoken answers to the pronunciation grader,
+      // which scores fluency and never reads the question.
+      if (activity.mediaAssetId && activity.activityType !== "open_ended") {
         await gradeSpeakingActivity(activity.id);
       } else {
         await gradeLessonActivity(activity.id);
@@ -161,12 +172,51 @@ export async function sweepStalePending(): Promise<SweepResult> {
     }
   }
 
+  // ── Peer-call evaluations ───────────────────────────────────────────────
+  // Two jobs here. Expiring requests nobody answered matters more than it
+  // looks: the one-live-per-call index means a single abandoned request would
+  // otherwise stop that pair evaluating any future call. And a recording that
+  // was uploaded while the worker was down has nothing else to pick it up.
+  let evaluationsExpired = 0;
+  let evaluationsAnalysed = 0;
+  let callsClosed = 0;
+  try {
+    // A call whose polls stopped — crashed tab, closed laptop, rate-limited
+    // client — is never closed by the polling path, and the one-live-per-person
+    // index then locks both students out of every future call.
+    callsClosed = await closeAbandonedSessions();
+  } catch (err) {
+    logger.error({ err }, "Sweep: closing abandoned calls failed");
+  }
+  try {
+    evaluationsExpired = await expireStaleEvaluations();
+    for (const id of await pendingAnalysisIds(BATCH_SIZE)) {
+      try {
+        await analyseEvaluation(id);
+        evaluationsAnalysed += 1;
+      } catch (err) {
+        logger.error({ err, evaluationId: id }, "Sweep: peer-call analysis failed");
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "Sweep: peer-call evaluation pass failed");
+  }
+
   const result = {
     quizAttemptsRetried: staleResponses.length,
     activitiesRetried: staleActivities.length,
+    evaluationsExpired,
+    evaluationsAnalysed,
+    callsClosed,
   };
 
-  if (result.quizAttemptsRetried > 0 || result.activitiesRetried > 0) {
+  if (
+    result.quizAttemptsRetried > 0 ||
+    result.activitiesRetried > 0 ||
+    result.evaluationsExpired > 0 ||
+    result.evaluationsAnalysed > 0 ||
+    result.callsClosed > 0
+  ) {
     logger.info(result, "Grading sweep retried stranded work");
   }
 

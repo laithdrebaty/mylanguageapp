@@ -36,6 +36,7 @@ import {
   type OpenAnswerVerdict,
 } from "./graders/open-answer";
 import { assessSpeech, type SpeechVerdict } from "./graders/pronunciation";
+import { transcribeSpokenTurn } from "./conversation";
 import {
   blockPoints,
   isNonScoring,
@@ -378,6 +379,21 @@ async function getLevelCode(levelId: number): Promise<string | null> {
  * the attempt pending and lets the student carry on. A lesson must never stall
  * on an AI call.
  */
+/**
+ * The authored concept list, as a list.
+ *
+ * Stored as free text, so it arrives however the author typed it: commas,
+ * newlines, or semicolons. Splitting on all three is more forgiving than
+ * demanding one format from a non-technical content manager.
+ */
+function splitConcepts(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\r\n,;]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 export async function gradeLessonActivity(
   activityAttemptId: number,
 ): Promise<OpenAnswerVerdict | null> {
@@ -387,9 +403,46 @@ export async function gradeLessonActivity(
     .where(eq(learningActivityAttemptsTable.id, activityAttemptId))
     .limit(1);
 
-  if (!attempt || attempt.evaluationStatus !== "pending" || !attempt.responseText) {
+  if (!attempt || attempt.evaluationStatus !== "pending") {
     return null;
   }
+
+  // A spoken open-ended answer arrives as audio with no text. Transcribe it
+  // first and store the transcript, so the rubric grader below sees the same
+  // shape whether the student typed or spoke, and so a teacher reviewing the
+  // attempt can read what was said.
+  let studentAnswer = attempt.responseText;
+  if (!studentAnswer && attempt.mediaAssetId) {
+    const [asset] = await db
+      .select()
+      .from(mediaAssetsTable)
+      .where(eq(mediaAssetsTable.id, attempt.mediaAssetId))
+      .limit(1);
+
+    if (!asset || asset.status !== "ready") return null;
+
+    try {
+      studentAnswer = await transcribeSpokenTurn(asset.key, asset.mimeType, {
+        userId: attempt.userId,
+        subscriptionPlan: await getPlanCode(attempt.userId),
+      });
+    } catch (err) {
+      // Leave it pending rather than failing it: the sweeper will try again,
+      // and a transcription outage must not mark a student's answer wrong.
+      logger.info(
+        { activityAttemptId, err },
+        "Spoken answer left pending: transcription unavailable",
+      );
+      return null;
+    }
+
+    await db
+      .update(learningActivityAttemptsTable)
+      .set({ responseText: studentAnswer })
+      .where(eq(learningActivityAttemptsTable.id, attempt.id));
+  }
+
+  if (!studentAnswer) return null;
 
   const [exercise] = attempt.exerciseId
     ? await db
@@ -411,11 +464,22 @@ export async function gradeLessonActivity(
   ]);
 
   let verdict: OpenAnswerVerdict;
+  // What a content manager authored as the standard to judge against. Both
+  // fields are free text in the CMS — `expected_concepts` is typically a comma
+  // or newline separated list — so they are split rather than assumed to be
+  // one phrase. Without these the model was marking answers against the
+  // question alone, which is not what the author specified.
+  const keyPoints = [
+    ...splitConcepts(exercise?.expectedConcepts),
+    ...(exercise?.modelAnswer ? [`A model answer: ${exercise.modelAnswer}`] : []),
+  ];
+
   try {
     verdict = await gradeOpenAnswer(
       {
         question: exercise?.question ?? exercise?.prompt ?? "Answer the question.",
-        studentAnswer: attempt.responseText,
+        studentAnswer,
+        keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         levelCode,
         passingScore: lesson?.passingScore ?? 75,
       },
@@ -490,6 +554,15 @@ export async function gradeSpeakingActivity(
     .where(eq(lessonsTable.id, attempt.lessonId))
     .limit(1);
 
+  // The task may be authored on the exercise rather than the block.
+  const [exercise] = attempt.exerciseId
+    ? await db
+        .select()
+        .from(exercisesTable)
+        .where(eq(exercisesTable.id, attempt.exerciseId))
+        .limit(1)
+    : [null];
+
   const [planCode, levelCode] = await Promise.all([
     getPlanCode(attempt.userId),
     lesson ? getLevelCode(lesson.levelId) : Promise.resolve(null),
@@ -503,7 +576,12 @@ export async function gradeSpeakingActivity(
         mimeType: asset.mimeType,
         referenceText: block?.expectsReferenceReading ? block.content : null,
         levelCode,
-        prompt: block?.prompt,
+        // A content manager may author the task on the block or on its
+        // exercise — the Corner Café lesson puts everything on the exercise and
+        // leaves the block's own prompt empty. Falling through means the
+        // assessor is told what was asked either way.
+        prompt: block?.prompt ?? exercise?.prompt ?? exercise?.question ?? undefined,
+        modelAnswer: exercise?.modelAnswer ?? null,
       },
       { userId: attempt.userId, subscriptionPlan: planCode },
     );
