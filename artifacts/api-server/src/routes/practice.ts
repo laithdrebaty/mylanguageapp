@@ -31,11 +31,39 @@ import {
   PracticeBlockedError,
   PRACTICE_LIMITS,
 } from "../services/practice";
+import {
+  requestEvaluation,
+  respondToEvaluation,
+  attachRecording,
+  listEvaluations,
+  getEvaluation,
+  EvaluationRefusedError,
+} from "../services/practice-evaluation";
+import { beginUpload, completeUpload, MediaValidationError } from "../services/media";
+import { jobs } from "../services/jobs";
 import { audit } from "../services/cms-audit";
 
 const router: IRouter = Router();
 
 function handleError(err: unknown, res: import("express").Response): void {
+  if (err instanceof EvaluationRefusedError) {
+    // 404 for anything a non-participant must not be able to probe, 409 for a
+    // state conflict, 403 for a refusal that is final.
+    const status =
+      err.reason === "SESSION_NOT_FOUND" ||
+      err.reason === "NOT_A_PARTICIPANT" ||
+      err.reason === "NOT_FOUND"
+        ? 404
+        : err.reason === "NOT_CONSENTED" || err.reason === "ALREADY_DECLINED"
+          ? 403
+          : 409;
+    res.status(status).json({ error: err.message, code: err.reason });
+    return;
+  }
+  if (err instanceof MediaValidationError) {
+    res.status(400).json({ error: err.message, code: err.code });
+    return;
+  }
   if (err instanceof PracticeBlockedError) {
     const status = err.reason === "DAILY_LIMIT" ? 429 : err.reason === "NOT_YOURS" ? 403 : 409;
     res.status(status).json({ error: err.message, code: err.reason });
@@ -266,6 +294,179 @@ router.post("/practice/report", requireAuth, async (req, res): Promise<void> => 
 
 router.get("/practice/history", requireAuth, async (req, res): Promise<void> => {
   res.json({ calls: await recentCalls(req.session.userId!) });
+});
+
+// ─── Call evaluation (opt-in, both participants) ──────────────────────────────
+//
+// The call is not recorded, so none of this can happen without the students
+// choosing it. One asks, the other agrees, and only then is a recording
+// accepted — and it is deleted again once the transcript exists.
+
+/** Ask for feedback on a finished call. Asking is this side's consent. */
+router.post(
+  "/practice/sessions/:id/evaluate",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const sessionId = parseInt(String(req.params.id), 10);
+    if (isNaN(sessionId)) {
+      badRequest(res, "Invalid session id");
+      return;
+    }
+    try {
+      const view = await requestEvaluation(sessionId, req.session.userId!);
+      res.status(201).json({ evaluation: view });
+    } catch (err) {
+      handleError(err, res);
+    }
+  },
+);
+
+const respondSchema = z.object({ agree: z.boolean() });
+
+/** The other participant's answer. A refusal is final. */
+router.post(
+  "/practice/evaluations/:id/respond",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const evaluationId = parseInt(String(req.params.id), 10);
+    if (isNaN(evaluationId)) {
+      badRequest(res, "Invalid evaluation id");
+      return;
+    }
+    const parsed = respondSchema.safeParse(req.body);
+    if (!parsed.success) {
+      badRequest(res, parsed.error.flatten());
+      return;
+    }
+    try {
+      const view = await respondToEvaluation(
+        evaluationId,
+        req.session.userId!,
+        parsed.data.agree,
+      );
+      res.json({ evaluation: view });
+    } catch (err) {
+      handleError(err, res);
+    }
+  },
+);
+
+const uploadSchema = z.object({
+  contentType: z.string().min(1),
+  sizeBytes: z.number().int().positive(),
+  durationSec: z.number().int().positive().nullable().optional(),
+});
+
+/**
+ * Reserve a presigned PUT for the call recording.
+ *
+ * Not the generic /media/uploads endpoint: a call recording holds a second
+ * student's voice, so the upload has to be gated on that student's consent —
+ * which only this route knows how to check. `attachRecording` refuses again on
+ * completion, so a presigned URL obtained here is useless without it.
+ */
+router.post(
+  "/practice/evaluations/:id/recording",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const evaluationId = parseInt(String(req.params.id), 10);
+    if (isNaN(evaluationId)) {
+      badRequest(res, "Invalid evaluation id");
+      return;
+    }
+    const parsed = uploadSchema.safeParse(req.body);
+    if (!parsed.success) {
+      badRequest(res, parsed.error.flatten());
+      return;
+    }
+
+    const userId = req.session.userId!;
+    try {
+      // Refuses unless this caller was in the call and both sides consented.
+      const current = await getEvaluation(evaluationId, userId);
+      if (current.status !== "consented") {
+        res.status(409).json({
+          error: "This evaluation is not waiting for a recording.",
+          code: "WRONG_STATE",
+        });
+        return;
+      }
+
+      const upload = await beginUpload({
+        userId,
+        purpose: "practice_call",
+        contentType: parsed.data.contentType,
+        sizeBytes: parsed.data.sizeBytes,
+        durationSec: parsed.data.durationSec ?? null,
+      });
+      res.status(201).json(upload);
+    } catch (err) {
+      handleError(err, res);
+    }
+  },
+);
+
+const confirmSchema = z.object({
+  mediaId: z.number().int().positive(),
+  /**
+   * The browser recorded itself and the peer on separate stereo channels.
+   * Reported rather than assumed: a browser that fell back to mono must not
+   * have its attribution presented as certain.
+   */
+  channelSeparated: z.boolean().optional(),
+});
+
+/** Confirm the bytes landed, then queue the analysis. */
+router.post(
+  "/practice/evaluations/:id/recording/complete",
+  requireAuth,
+  async (req, res): Promise<void> => {
+    const evaluationId = parseInt(String(req.params.id), 10);
+    if (isNaN(evaluationId)) {
+      badRequest(res, "Invalid evaluation id");
+      return;
+    }
+    const parsed = confirmSchema.safeParse(req.body);
+    if (!parsed.success) {
+      badRequest(res, parsed.error.flatten());
+      return;
+    }
+
+    const userId = req.session.userId!;
+    try {
+      // Checks the asset is this user's and the bytes are really there.
+      await completeUpload(parsed.data.mediaId, userId);
+      const view = await attachRecording(
+        evaluationId,
+        userId,
+        parsed.data.mediaId,
+        parsed.data.channelSeparated === true,
+      );
+      // ASR over a long call plus a model pass: far too slow to hold a request.
+      jobs.enqueue("analyse_peer_call", { evaluationId });
+      res.json({ evaluation: view });
+    } catch (err) {
+      handleError(err, res);
+    }
+  },
+);
+
+/** This user's evaluations. Each row carries only their own feedback. */
+router.get("/practice/evaluations", requireAuth, async (req, res): Promise<void> => {
+  res.json({ evaluations: await listEvaluations(req.session.userId!) });
+});
+
+router.get("/practice/evaluations/:id", requireAuth, async (req, res): Promise<void> => {
+  const evaluationId = parseInt(String(req.params.id), 10);
+  if (isNaN(evaluationId)) {
+    badRequest(res, "Invalid evaluation id");
+    return;
+  }
+  try {
+    res.json({ evaluation: await getEvaluation(evaluationId, req.session.userId!) });
+  } catch (err) {
+    handleError(err, res);
+  }
 });
 
 export default router;
