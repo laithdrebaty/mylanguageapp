@@ -21,7 +21,7 @@
 import { z } from "zod";
 import type { AITask } from "@workspace/db";
 import { resolveTaskConfig, computeCostUsd } from "./ai-config";
-import { chatJson } from "./ai-providers/openai-compatible";
+import { chatJson } from "./ai-providers";
 import { checkAndIncrement, recordUsage } from "./ai-quota";
 import type { PlacementOutcome } from "./scoring/placement";
 import { logger } from "../lib/logger";

@@ -27,7 +27,7 @@
  * counted in code, not asked of the model.
  */
 
-import { eq, and, asc, sql } from "drizzle-orm";
+import { eq, and, asc, sql, gte } from "drizzle-orm";
 import {
   db,
   conversationSessionsTable,
@@ -38,9 +38,9 @@ import {
   vocabularyTable,
   type AITask,
 } from "@workspace/db";
-import { resolveTaskConfig, computeCostUsd, AIUnavailableError } from "./ai-config";
-import { chat, AIProviderError, type ChatMessage } from "./ai-providers/openai-compatible";
-import { transcribe } from "./ai-providers/openai-audio";
+import { resolveTaskConfig, computeCostUsd, AIUnavailableError, getPlanAllowance } from "./ai-config";
+import { chat, AIProviderError, type ChatMessage } from "./ai-providers";
+import { transcribe } from "./ai-providers";
 import { storage } from "./storage";
 import { checkAndIncrement, recordUsage } from "./ai-quota";
 import { normaliseWord, tokenise } from "./scoring/alignment";
@@ -65,7 +65,8 @@ export type ConversationBlockedReason =
   | "TIME_LIMIT"
   | "NOT_ACTIVE"
   | "ALREADY_ACTIVE"
-  | "NO_LESSON";
+  | "NO_LESSON"
+  | "MONTHLY_MINUTES_SPENT";
 
 export class ConversationBlockedError extends Error {
   readonly reason: ConversationBlockedReason;
@@ -78,8 +79,10 @@ export class ConversationBlockedError extends Error {
 
 export class ConversationUnavailableError extends Error {
   readonly reason: string;
-  constructor(reason: string, message: string) {
-    super(message);
+  constructor(reason: string, message: string, options: { cause?: unknown } = {}) {
+    // The cause is carried so the route can log WHY a provider call failed. The
+    // student only ever sees `message`, which stays deliberately vague.
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "ConversationUnavailableError";
     this.reason = reason;
   }
@@ -92,6 +95,8 @@ interface LessonContext {
   objectives: string[];
   /** The reading passage, trimmed — the topic, not the whole lesson. */
   text: string | null;
+  /** The dialogue this block authored for the tutor to work through, if any. */
+  script?: string | null;
   vocabulary: Array<{ word: string; translation: string }>;
   levelCode: string | null;
   /** What the conversation block asks them to talk about. */
@@ -137,13 +142,22 @@ async function loadLessonContext(
     .limit(1);
 
   let prompt: string | null = null;
+  let script: string | null = null;
   if (blockId) {
     const [block] = await db
-      .select({ prompt: contentBlocksTable.prompt })
+      .select({
+        prompt: contentBlocksTable.prompt,
+        content: contentBlocksTable.content,
+      })
       .from(contentBlocksTable)
       .where(eq(contentBlocksTable.id, blockId))
       .limit(1);
     prompt = block?.prompt ?? null;
+    // The dialogue a content manager wrote for THIS block. Distinct from the
+    // lesson's reading passage above: that is the topic, this is the script the
+    // tutor is meant to follow. Picking the first block with content found the
+    // passage and never the script, so an authored dialogue was ignored.
+    script = block?.content ? block.content.slice(0, 2000) : null;
   }
 
   return {
@@ -155,6 +169,7 @@ async function loadLessonContext(
     vocabulary,
     levelCode: lesson.levelCode,
     prompt,
+    script,
   };
 }
 
@@ -183,10 +198,21 @@ export function buildSystemPrompt(context: LessonContext): string {
     context.prompt ? `The student was asked: ${context.prompt}` : "",
     vocab ? `Target vocabulary to work into the conversation naturally: ${vocab}` : "",
     context.text ? `\nThe lesson text they read:\n${context.text}` : "",
+    context.script
+      ? `\nTHE DIALOGUE TO WORK THROUGH — the script authored for this activity:\n${context.script}`
+      : "",
     "",
     "HOW TO REPLY",
     "- At most two short sentences, then ONE question. Never more than one question.",
     "- The student should be doing most of the talking. You are not.",
+    // Only when a script exists — otherwise these would impose a constraint the
+    // content manager never set.
+    context.script
+      ? "- Follow the dialogue above: ask its questions, in its order, in your own simple words. Do not invent a different conversation and do not skip ahead."
+      : "",
+    context.script
+      ? "- Give the student room on each step. If their answer is short, or misses what the dialogue asked for, stay on that step and ask them to say more — an example, a reason, or a detail — before moving on. Only advance once they have genuinely answered it."
+      : "",
     "- Stay on this lesson's topic. If they wander, bring them back with a question.",
     "- If they make a mistake that would confuse a listener, correct it in a few words",
     "  and move on. Ignore small slips. Never list their errors.",
@@ -219,6 +245,49 @@ export interface StartResult {
  * so an edit to the curriculum mid-conversation cannot change the rules a
  * student is already playing by.
  */
+/**
+ * Refuse a new conversation once the plan's monthly minutes are spent.
+ *
+ * Measured from the sessions already started this month rather than from a
+ * counter, so it survives a Redis flush and stays correct if a session ends
+ * early. Budgeting by the session's full allowance rather than its actual
+ * length is deliberate: the decision has to be made before the conversation
+ * happens, and over-counting is the safe direction.
+ */
+async function assertMonthlyMinutesRemaining(
+  userId: number,
+  planCode: string | null,
+  requestedMinutes: number,
+): Promise<void> {
+  const allowance = await getPlanAllowance(planCode, "conversation");
+  const cap = allowance.monthlyMinutes;
+
+  // null = not duration-capped on this plan; -1 = unlimited (admin).
+  if (cap == null || cap < 0) return;
+
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+
+  const [row] = await db
+    .select({ used: sql<number>`coalesce(sum(${conversationSessionsTable.maxMinutes}), 0)::int` })
+    .from(conversationSessionsTable)
+    .where(
+      and(
+        eq(conversationSessionsTable.userId, userId),
+        gte(conversationSessionsTable.startedAt, monthStart),
+      ),
+    );
+
+  const used = row?.used ?? 0;
+  if (used + requestedMinutes > cap) {
+    throw new ConversationBlockedError(
+      "MONTHLY_MINUTES_SPENT",
+      `You have used this month's conversation time (${cap} minutes on your plan). It resets next month.`,
+    );
+  }
+}
+
 export async function startConversation(
   userId: number,
   lessonId: number,
@@ -265,6 +334,12 @@ export async function startConversation(
 
   const config = await resolveConfig();
 
+  // Conversation cost is driven by MINUTES, not by how many sessions were
+  // started, so the request counter alone does not bound it. Refuse a new
+  // session once the month's minutes are spent — the per-session cap above
+  // limits one conversation, this limits the month.
+  await assertMonthlyMinutesRemaining(userId, ctx.subscriptionPlan, maxMinutes);
+
   // The opening line is a model call like any other, so it is counted like one.
   await claimQuota(userId, ctx.subscriptionPlan);
 
@@ -300,7 +375,9 @@ export async function startConversation(
       .where(eq(conversationSessionsTable.id, session.id));
 
     if (err instanceof AIProviderError) {
-      throw new ConversationUnavailableError("PROVIDER_ERROR", err.message);
+      throw new ConversationUnavailableError("PROVIDER_ERROR", err.message, {
+        cause: err,
+      });
     }
     throw err;
   } finally {
@@ -438,7 +515,9 @@ export async function takeTurn(
     succeeded = true;
   } catch (err) {
     if (err instanceof AIProviderError) {
-      throw new ConversationUnavailableError("PROVIDER_ERROR", err.message);
+      throw new ConversationUnavailableError("PROVIDER_ERROR", err.message, {
+        cause: err,
+      });
     }
     throw err;
   } finally {
@@ -627,7 +706,9 @@ export async function transcribeSpokenTurn(
   } catch (err) {
     if (err instanceof ConversationUnavailableError) throw err;
     if (err instanceof AIProviderError) {
-      throw new ConversationUnavailableError("PROVIDER_ERROR", err.message);
+      throw new ConversationUnavailableError("PROVIDER_ERROR", err.message, {
+        cause: err,
+      });
     }
     throw new ConversationUnavailableError(
       "AUDIO_UNAVAILABLE",
