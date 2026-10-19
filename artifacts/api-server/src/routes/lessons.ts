@@ -204,6 +204,16 @@ interface LessonContentBundle {
   }>;
 }
 
+/**
+ * Treats a blank string as a missing value. The CMS writes "" for text fields
+ * left untouched, so `??` alone would prefer an empty block column over a real
+ * value stored on the exercise.
+ */
+function emptyToNull(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return value.trim() === "" ? null : value;
+}
+
 async function loadLessonContent(lessonId: number): Promise<LessonContentBundle | null> {
   const [lesson] = await db
     .select()
@@ -293,8 +303,23 @@ async function loadLessonContent(lessonId: number): Promise<LessonContentBundle 
         questionAr: e.questionAr ?? null,
         options: optionsFor(e.id),
       })),
-      prompt: block.prompt ?? null,
-      promptAr: block.promptAr ?? null,
+      // The CMS speaking and open-ended editors write the question onto the
+      // exercise row, while every other block type carries it on the block
+      // itself. Fall back to the exercise so a block authored that way still
+      // shows its prompt instead of an empty screen. `question` is the
+      // open-ended editor's field, `prompt` the speaking one's. Empty strings
+      // count as absent: the editor saves "" rather than NULL for a field it
+      // never filled.
+      prompt:
+        emptyToNull(block.prompt) ??
+        emptyToNull(exercise?.prompt) ??
+        emptyToNull(exercise?.question) ??
+        null,
+      promptAr:
+        emptyToNull(block.promptAr) ??
+        emptyToNull(exercise?.promptAr) ??
+        emptyToNull(exercise?.questionAr) ??
+        null,
       exampleAudio: block.exampleAudio ?? null,
       audioUrl: resolveAudioUrl(block, exercise),
       // Resolved to a playable URL by the client through /media/:id/url rather
@@ -834,7 +859,13 @@ router.post(
     // gradeLessonActivity returns null and the attempt stays pending, so the
     // lesson never stalls on the model being slow or absent.
     let verdict = null;
-    if (evaluationStatus === "pending" && activityType === "open_ended" && responseText) {
+    // `responseText` OR a recording: a spoken open-ended answer is transcribed
+    // inside gradeLessonActivity, so audio alone is enough to grade on.
+    if (
+      evaluationStatus === "pending" &&
+      activityType === "open_ended" &&
+      (responseText || mediaId !== undefined)
+    ) {
       verdict = await gradeLessonActivity(attempt.id);
     }
 
@@ -864,7 +895,11 @@ router.post(
     // A recording is assessed after the response is sent: it downloads audio
     // and waits on a speech recogniser, which is seconds of work. The student
     // moves on and the verdict appears in their progress when it lands.
-    if (evaluationStatus === "pending" && mediaId !== undefined) {
+    if (
+      evaluationStatus === "pending" &&
+      mediaId !== undefined &&
+      activityType !== "open_ended"
+    ) {
       jobs.enqueue("assess_speaking_activity", { activityAttemptId: attempt.id });
     }
   },
