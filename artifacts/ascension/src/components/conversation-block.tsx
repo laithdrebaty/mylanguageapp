@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useMicRecorder } from "@/hooks/use-mic-recorder";
+import { useSpeech } from "@/hooks/use-speech";
 import { uploadRecording, MediaUploadError } from "@/lib/media-api";
 import {
   startConversation,
@@ -32,6 +33,8 @@ import {
   Send,
   Mic,
   StopCircle,
+  Volume2,
+  VolumeX,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -47,6 +50,7 @@ interface Props {
 export function ConversationBlock({ lessonId, blockId, prompt }: Props) {
   const { toast } = useToast();
   const mic = useMicRecorder();
+  const speech = useSpeech();
 
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
@@ -108,6 +112,7 @@ export function ConversationBlock({ lessonId, blockId, prompt }: Props) {
       const r = await startConversation(lessonId, blockId);
       setSessionId(r.sessionId);
       setTurns([{ role: "tutor", content: r.greeting }]);
+      speech.speak(r.greeting);
       setTurnsRemaining(r.maxTurns);
       setMinutesRemaining(r.maxMinutes);
       setTargetVocab(r.targetVocabulary);
@@ -128,6 +133,7 @@ export function ConversationBlock({ lessonId, blockId, prompt }: Props) {
     try {
       const r = await sendTurn(sessionId, { message });
       setTurns((t) => [...t, { role: "tutor", content: r.reply }]);
+      speech.speak(r.reply);
       setTurnsRemaining(r.turnsRemaining);
       setMinutesRemaining(r.minutesRemaining);
       setVocabUsed(r.vocabularyUsed);
@@ -172,6 +178,7 @@ export function ConversationBlock({ lessonId, blockId, prompt }: Props) {
           { role: "student", content: r.transcript ?? "🎤" },
           { role: "tutor", content: r.reply },
         ]);
+        speech.speak(r.reply);
         setTurnsRemaining(r.turnsRemaining);
         setMinutesRemaining(r.minutesRemaining);
         setVocabUsed(r.vocabularyUsed);
@@ -245,6 +252,25 @@ export function ConversationBlock({ lessonId, blockId, prompt }: Props) {
           <span className="flex items-center gap-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
             محادثة
+            {/* Hidden entirely where the browser cannot speak, rather than
+                shown as a control that does nothing. */}
+            {speech.available && (
+              <button
+                type="button"
+                onClick={() => speech.setEnabled(!speech.enabled)}
+                title={speech.enabled ? "إيقاف صوت المعلم" : "تشغيل صوت المعلم"}
+                aria-label={speech.enabled ? "إيقاف صوت المعلم" : "تشغيل صوت المعلم"}
+                className="p-1 rounded-md hover:bg-secondary transition-colors"
+              >
+                {speech.enabled ? (
+                  <Volume2
+                    className={`h-3.5 w-3.5 ${speech.speaking ? "text-primary animate-pulse" : ""}`}
+                  />
+                ) : (
+                  <VolumeX className="h-3.5 w-3.5 opacity-60" />
+                )}
+              </button>
+            )}
           </span>
           <span className="tabular-nums">
             {turnsRemaining !== null && `${turnsRemaining} أدوار متبقية`}

@@ -225,11 +225,56 @@ function OpenEndedBlock({
   block,
   state,
   onChange,
+  onRecordingDone,
+  onUploadState,
 }: {
   block: ContentBlock;
   state: BlockState;
   onChange: (text: string) => void;
+  onRecordingDone: (durationSec: number) => void;
+  onUploadState: (patch: {
+    uploading?: boolean;
+    mediaId?: number;
+    uploadError?: string;
+  }) => void;
 }) {
+  const mic = useMicRecorder();
+
+  // Spec 4C allows either. Writing and speaking are different skills, and a
+  // student who can say it but not spell it should still be able to answer.
+  const [mode, setMode] = useState<"text" | "voice">("text");
+
+  // Same upload-on-stop as the speaking block: the transfer happens while the
+  // student reviews their playback, so Continue stays instant.
+  useEffect(() => {
+    if (mode !== "voice") return;
+    if (mic.status !== "done" || !mic.blob || mic.durationSec <= 0) return;
+
+    let cancelled = false;
+    onRecordingDone(mic.durationSec);
+    onUploadState({ uploading: true, uploadError: undefined });
+
+    uploadRecording(mic.blob, "lesson_activity", mic.durationSec)
+      .then((r) => {
+        if (!cancelled) onUploadState({ uploading: false, mediaId: r.mediaId });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        onUploadState({
+          uploading: false,
+          uploadError:
+            err instanceof MediaUploadError && err.status === 503
+              ? "خدمة تخزين الصوت غير مفعّلة حالياً."
+              : "تعذّر رفع التسجيل. أعد المحاولة.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, mic.status, mic.blob, mic.durationSec]);
+
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <BlockHeader block={block} />
@@ -251,14 +296,104 @@ function OpenEndedBlock({
 
       {isUsableUrl(block.audioUrl) && <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />}
 
-      <textarea
-        className="w-full border rounded-xl p-4 text-foreground bg-background resize-none min-h-[120px] focus:outline-none focus:ring-2 focus:ring-primary/40"
-        placeholder="اكتب إجابتك هنا..."
-        value={state.responseText ?? ""}
-        disabled={state.submitted}
-        onChange={(e) => onChange(e.target.value)}
-        dir="ltr"
-      />
+      {!state.submitted && (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={mode === "text" ? "default" : "outline"}
+            size="sm"
+            className="flex-1 rounded-xl"
+            onClick={() => setMode("text")}
+          >
+            كتابة
+          </Button>
+          <Button
+            type="button"
+            variant={mode === "voice" ? "default" : "outline"}
+            size="sm"
+            className="flex-1 rounded-xl gap-2"
+            onClick={() => setMode("voice")}
+          >
+            <Mic className="h-4 w-4" />
+            تسجيل صوتي
+          </Button>
+        </div>
+      )}
+
+      {/* After submitting, show the answer that was actually given. Falling
+          back to the textarea on `submitted` regardless of mode meant a spoken
+          answer was replaced by an empty disabled box — the recording gone and
+          the block looking as though it had reset. A voice answer keeps its
+          recorder panel, which reports the saved recording. */}
+      {state.submitted && mode === "voice" && !state.responseText ? (
+        <p className="text-xs text-center text-emerald-600">تم إرسال تسجيلك الصوتي.</p>
+      ) : mode === "text" || state.submitted ? (
+        <textarea
+          className="w-full border rounded-xl p-4 text-foreground bg-background resize-none min-h-[120px] focus:outline-none focus:ring-2 focus:ring-primary/40"
+          placeholder="اكتب إجابتك هنا..."
+          value={state.responseText ?? ""}
+          disabled={state.submitted}
+          onChange={(e) => onChange(e.target.value)}
+          dir="ltr"
+        />
+      ) : (
+        <div className="space-y-3">
+          {state.uploading && (
+            <p className="text-xs text-center text-muted-foreground">جارٍ رفع التسجيل…</p>
+          )}
+          {state.uploadError && (
+            <p className="text-xs text-center text-destructive">{state.uploadError}</p>
+          )}
+          {state.mediaId !== undefined && !state.uploading && (
+            <p className="text-xs text-center text-emerald-600">تم حفظ التسجيل.</p>
+          )}
+
+          <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-border rounded-3xl bg-secondary/20 gap-4">
+            {mic.status === "idle" && (
+              <>
+                <button
+                  onClick={mic.start}
+                  className="h-24 w-24 rounded-full bg-primary flex items-center justify-center text-primary-foreground shadow-lg hover:scale-105 transition-transform"
+                >
+                  <Mic className="h-10 w-10" />
+                </button>
+                <p className="text-lg font-medium text-foreground">انقر للتحدث</p>
+              </>
+            )}
+            {mic.status === "recording" && (
+              <button
+                onClick={mic.stop}
+                className="h-24 w-24 rounded-full bg-rose-500 flex items-center justify-center text-white shadow-lg animate-pulse"
+              >
+                <StopCircle className="h-10 w-10" />
+              </button>
+            )}
+            {mic.status === "done" && (
+              <div className="w-full space-y-3">
+                <audio controls className="w-full rounded-lg" src={mic.playbackUrl ?? undefined} />
+                <p className="text-sm text-muted-foreground text-center">
+                  مدة التسجيل: {mic.durationSec} ثانية
+                </p>
+                <Button variant="outline" size="sm" onClick={mic.reset} className="w-full">
+                  إعادة التسجيل
+                </Button>
+              </div>
+            )}
+            {mic.status === "unsupported" && (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                <AlertCircle className="h-5 w-5 text-amber-500" />
+                <span>التسجيل الصوتي غير مدعوم في هذا المتصفح.</span>
+              </div>
+            )}
+            {mic.status === "denied" && (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                <AlertCircle className="h-5 w-5 text-rose-500" />
+                <span>لم يتم السماح بالوصول للميكروفون. يرجى السماح من إعدادات المتصفح.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {state.result && <OpenEndedVerdict result={state.result} />}
     </div>
@@ -429,10 +564,13 @@ function SpeakingBlock({
         <BlockMedia mediaId={block.referenceMediaId} kind="audio" />
       )}
 
-      {/* Honest about what happens to the recording: it is stored, but nothing
-          scores it yet. */}
-      <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded-lg p-3 leading-relaxed">
-        ملاحظة: يُحفظ تسجيلك ليُقيَّم لاحقاً. لا يوجد تقييم تلقائي للنطق في الوقت الحالي.
+      {/* What happens to the recording. Automatic assessment exists now, but it
+          can still come back unavailable (speech provider off, out of quota), in
+          which case the attempt stays pending for a teacher — so this does not
+          promise a score, it says the recording is kept and assessed when it
+          can be. The actual outcome is reported below by SpeechVerdictCard. */}
+      <div className="text-xs text-muted-foreground bg-secondary/50 border border-border rounded-lg p-3 leading-relaxed">
+        ملاحظة: يُحفظ تسجيلك ويُقيَّم تلقائياً بعد الإرسال. إذا تعذّر التقييم التلقائي، يبقى تسجيلك محفوظاً ليراجعه معلّم.
       </div>
 
       {state.uploading && (
@@ -762,10 +900,19 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
   const getBlockState = (blockId: number): BlockState =>
     blockStates[blockId] ?? { submitted: false, submitting: false, result: null };
 
+  // Patches merge onto `prev`, never onto the render-time `blockStates`.
+  // A finished recording calls this twice in the same tick — once to record
+  // that audio exists, once to start the upload — and reading the stale
+  // snapshot meant the second call overwrote `hasRecording` with the value
+  // from before the first. Continue then refused a recording that had in fact
+  // uploaded fine.
   const setBlockField = (blockId: number, patch: Partial<BlockState>) => {
     setBlockStates(prev => ({
       ...prev,
-      [blockId]: { ...getBlockState(blockId), ...patch },
+      [blockId]: {
+        ...(prev[blockId] ?? { submitted: false, submitting: false, result: null }),
+        ...patch,
+      },
     }));
   };
 
@@ -789,8 +936,17 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
       // would grade the answer against the first every time.
       const q = block.questions?.[questionIndex];
       if (q) payload.exerciseId = q.exerciseId;
-    } else if (block.type === "open_ended" && st.responseText) {
-      payload.responseText = st.responseText;
+    } else if (block.type === "open_ended") {
+      // Either form counts, and an open-ended answer can be spoken: the server
+      // transcribes the recording into the same answer a typed one would have
+      // been. Sending only `responseText` dropped a voice answer on the floor —
+      // the attempt arrived with nothing attached, so there was nothing to
+      // grade and it sat pending for a teacher who had no recording either.
+      if (st.responseText) payload.responseText = st.responseText;
+      if (st.recordingDurationSeconds !== undefined) {
+        payload.recordingDurationSeconds = st.recordingDurationSeconds;
+      }
+      if (st.mediaId !== undefined) payload.mediaId = st.mediaId;
     } else if (
       (block.type === "speaking_prompt" || block.type === "pronunciation_guide") &&
       st.recordingDurationSeconds !== undefined
@@ -857,8 +1013,11 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
         return;
       }
       if (currentBlock.type === "open_ended") {
-        if (!st.responseText || st.responseText.trim() === "") {
-          toast({ variant: "destructive", title: "الرجاء كتابة إجابة أولاً" });
+        // Either form counts: the server transcribes a recording into the same
+        // answer a typed one would have been.
+        const typed = (st.responseText ?? "").trim() !== "";
+        if (!typed && !st.hasRecording) {
+          toast({ variant: "destructive", title: "الرجاء كتابة إجابة أو تسجيلها أولاً" });
           return;
         }
       }
@@ -1016,6 +1175,12 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     if (currentBlock.type === "mcq" && currentBlock.isRequired && !currentState?.selectedOptionId) {
       isContinueDisabled = true;
     }
+    // Submitting mid-upload sends the attempt without its recording, and the
+    // answer is then unrecoverable: the upload finishes into state nobody reads
+    // again. The wait is the length of one upload and the button says why.
+    if (currentState?.uploading) {
+      isContinueDisabled = true;
+    }
   }
 
   // Passive blocks need no skip — their "متابعة" always advances.
@@ -1062,16 +1227,13 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
         return (
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
             <BlockHeader block={currentBlock} />
-            {currentBlock.contentAr && (
-              <div className="p-6 bg-secondary/50 rounded-2xl border border-border">
-                <p className="text-lg leading-relaxed text-foreground" dir="rtl">{currentBlock.contentAr}</p>
-              </div>
-            )}
-            {currentBlock.content && (
-              <div className="p-6 bg-secondary/50 rounded-2xl border border-border">
-                <p className="text-xl leading-relaxed font-serif text-foreground" dir="ltr">{currentBlock.content}</p>
-              </div>
-            )}
+            {/* `content` is NOT shown. For a dialogue block it is the script the
+                tutor follows (services/conversation.ts reads it as `script`),
+                so printing it here handed the student both halves of the
+                conversation — their own lines included — before they said a
+                word. The prompt below, and the tutor itself, are the exercise.
+                The Arabic field is the translation OF that script, so it is
+                withheld for the same reason. */}
             {isUsableUrl(currentBlock.audioUrl) && <AudioWidget url={currentBlock.audioUrl!} label={currentBlock.audioNote ?? undefined} />}
 
             {/* The tutor itself. Bounded by the block's configuration — the
@@ -1102,9 +1264,16 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
             {currentBlock.contentAr && (
               <p className="text-lg leading-relaxed text-foreground" dir="rtl">{currentBlock.contentAr}</p>
             )}
-            {currentBlock.content && (
+            {/* The CMS labels this field "Word to spell" and saves it to
+                `prompt`; `content` is the older home for the same thing. In a
+                lesson this block teaches the word rather than testing it — the
+                quiz player is where spelling is answered blind — so showing it
+                is the point. */}
+            {(currentBlock.content || currentBlock.prompt) && (
               <div className="p-6 bg-secondary/50 rounded-2xl border border-border text-center">
-                <p className="text-4xl font-bold font-serif tracking-widest" dir="ltr">{currentBlock.content}</p>
+                <p className="text-4xl font-bold font-serif tracking-widest" dir="ltr">
+                  {currentBlock.content || currentBlock.prompt}
+                </p>
               </div>
             )}
             {isUsableUrl(currentBlock.audioUrl) && <AudioWidget url={currentBlock.audioUrl!} label={currentBlock.audioNote ?? undefined} />}
@@ -1130,6 +1299,13 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
             block={currentBlock}
             state={st}
             onChange={(text) => setBlockField(currentBlock.id, { responseText: text })}
+            onRecordingDone={(dur) =>
+              setBlockField(currentBlock.id, {
+                recordingDurationSeconds: dur,
+                hasRecording: true,
+              })
+            }
+            onUploadState={(patch) => setBlockField(currentBlock.id, patch)}
           />
         );
 
