@@ -44,6 +44,8 @@ import {
   type AiTaskSettings,
   type ModelInfo,
   type UsageRow,
+  type UsageTotals,
+  type UsageByUser,
   type AITask,
 } from "@/lib/ai-admin-api";
 
@@ -63,6 +65,8 @@ export default function AiSettings() {
   const { toast } = useToast();
   const [config, setConfig] = useState<AiConfig | null>(null);
   const [usage, setUsage] = useState<UsageRow[]>([]);
+  const [totals, setTotals] = useState<UsageTotals | null>(null);
+  const [byUser, setByUser] = useState<UsageByUser[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -71,6 +75,8 @@ export default function AiSettings() {
       const [c, u] = await Promise.all([getAiConfig(), getAiUsage(30)]);
       setConfig(c);
       setUsage(u.rows);
+      setTotals(u.totals ?? null);
+      setByUser(u.byUser ?? []);
       setLoadError(null);
     } catch (e) {
       setLoadError(e instanceof AiAdminError ? e.message : "Could not load AI configuration");
@@ -284,6 +290,59 @@ export default function AiSettings() {
       {/* Usage */}
       <section className="space-y-3">
         <h2 className="text-lg font-bold">Usage, last 30 days</h2>
+
+        {totals && totals.calls > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-2">
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground">Total spend</div>
+                <div className="text-2xl font-bold">${totals.total_cost_usd.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {totals.calls.toLocaleString()} calls
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-2">
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground">Average per student</div>
+                <div className="text-2xl font-bold">${totals.avg_cost_usd.toFixed(3)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {totals.active_users} active
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* The number that says whether the quotas bind. Above the cheapest
+                paid plan means one student costs more than they pay. */}
+            <Card className={totals.max_cost_usd >= 2 ? "border-2 border-destructive" : "border-2"}>
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground">Heaviest student</div>
+                <div className={`text-2xl font-bold ${totals.max_cost_usd >= 2 ? "text-destructive" : ""}`}>
+                  ${totals.max_cost_usd.toFixed(3)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {totals.max_cost_usd >= 2 ? "above the $2 plan — check limits" : "within plan"}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={totals.failures > 0 ? "border-2 border-amber-500" : "border-2"}>
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground">Failures</div>
+                <div className={`text-2xl font-bold ${totals.failures > 0 ? "text-amber-600" : ""}`}>
+                  {totals.failures}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {totals.calls > 0
+                    ? `${((totals.failures / totals.calls) * 100).toFixed(1)}% of calls`
+                    : "—"}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {usage.length === 0 ? (
           <p className="text-sm text-muted-foreground">No AI calls recorded yet.</p>
         ) : (
@@ -332,6 +391,55 @@ export default function AiSettings() {
               </table>
             </CardContent>
           </Card>
+        )}
+
+        {/* Per student, worst first. The aggregate above says what the product
+            costs; this says whether any one student costs more than they pay. */}
+        {byUser.length > 0 && (
+          <>
+            <h3 className="text-sm font-semibold pt-2">Heaviest students</h3>
+            <Card className="border-2 overflow-x-auto">
+              <CardContent className="p-0">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left p-3 font-medium">Student</th>
+                      <th className="text-left p-3 font-medium">Plan</th>
+                      <th className="text-right p-3 font-medium">Calls</th>
+                      <th className="text-right p-3 font-medium">Spend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byUser.map((u) => {
+                      const planPrice =
+                        u.plan_code === "professional_english" ? 4 :
+                        u.plan_code === "general_english" ? 2 : 0;
+                      const overspending = planPrice > 0 && u.cost_usd >= planPrice;
+                      return (
+                        <tr key={u.user_id} className="border-t border-border">
+                          <td className="p-3">
+                            <div className="font-medium">{u.name ?? `#${u.user_id}`}</div>
+                            <div className="text-xs text-muted-foreground" dir="ltr">
+                              {u.email ?? "—"}
+                            </div>
+                          </td>
+                          <td className="p-3 text-xs text-muted-foreground">{u.plan_code}</td>
+                          <td className="p-3 text-right tabular-nums">{u.calls}</td>
+                          <td className={`p-3 text-right tabular-nums ${overspending ? "text-destructive font-semibold" : ""}`}>
+                            ${u.cost_usd.toFixed(4)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+            <p className="text-xs text-muted-foreground">
+              A student in red costs more in AI than their subscription brings in.
+              One or two is ordinary; a pattern means the monthly limits need tightening.
+            </p>
+          </>
         )}
       </section>
     </div>
