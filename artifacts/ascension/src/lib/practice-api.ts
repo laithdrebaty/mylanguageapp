@@ -117,6 +117,39 @@ export interface PracticeCall {
   endReason: string | null;
 }
 
+/**
+ * An opt-in evaluation of one call.
+ *
+ * Only ever carries the viewer's OWN feedback — the other participant's is not
+ * sent to this browser at all, because it is a judgement about them that they
+ * did not agree to share.
+ */
+export interface CallEvaluation {
+  id: number;
+  sessionId: number;
+  status:
+    | "requested"
+    | "consented"
+    | "declined"
+    | "uploaded"
+    | "analyzing"
+    | "completed"
+    | "failed"
+    | "expired";
+  isRequester: boolean;
+  /** This viewer still has to answer the consent question. */
+  awaitingYourConsent: boolean;
+  requestedAt: string;
+  durationSeconds: number | null;
+  feedback: string | null;
+  feedbackAr: string | null;
+  summary: string | null;
+  summaryAr: string | null;
+  /** The speaker-to-person guess was weak; the screen says so. */
+  attributionUncertain: boolean;
+  error: string | null;
+}
+
 // ─── Calls ────────────────────────────────────────────────────────────────────
 
 export const practiceApi = {
@@ -162,6 +195,54 @@ export const practiceApi = {
       "GET",
       `/practice/sessions/${sessionId}/signals?after=${after}`,
     ),
+
+  // ─── Evaluation (opt-in, needs both participants) ──────────────────────────
+
+  /** Ask for feedback on a finished call. Asking is this side's consent. */
+  requestEvaluation: (sessionId: number) =>
+    request<{ evaluation: CallEvaluation }>(
+      "POST",
+      `/practice/sessions/${sessionId}/evaluate`,
+      {},
+    ),
+
+  /** Answer someone else's request. A refusal is final. */
+  respondToEvaluation: (evaluationId: number, agree: boolean) =>
+    request<{ evaluation: CallEvaluation }>(
+      "POST",
+      `/practice/evaluations/${evaluationId}/respond`,
+      { agree },
+    ),
+
+  /** Reserve a presigned PUT. Refused until both sides have agreed. */
+  beginRecordingUpload: (
+    evaluationId: number,
+    body: { contentType: string; sizeBytes: number; durationSec?: number | null },
+  ) =>
+    request<{ mediaId: number; key: string; upload: { url: string; headers?: Record<string, string> } }>(
+      "POST",
+      `/practice/evaluations/${evaluationId}/recording`,
+      body,
+    ),
+
+  /** Confirm the bytes landed; the server then queues the analysis. */
+  completeRecordingUpload: (
+    evaluationId: number,
+    mediaId: number,
+    /** True when the recording has own-mic and peer on separate channels. */
+    channelSeparated: boolean,
+  ) =>
+    request<{ evaluation: CallEvaluation }>(
+      "POST",
+      `/practice/evaluations/${evaluationId}/recording/complete`,
+      { mediaId, channelSeparated },
+    ),
+
+  listEvaluations: () =>
+    request<{ evaluations: CallEvaluation[] }>("GET", "/practice/evaluations"),
+
+  getEvaluation: (evaluationId: number) =>
+    request<{ evaluation: CallEvaluation }>("GET", `/practice/evaluations/${evaluationId}`),
 
   block: (userId: number, sessionId: number | null) =>
     request<{ ok: true }>("POST", "/practice/block", { userId, sessionId }),
