@@ -10,6 +10,7 @@
 
 import { registerJobHandler } from "./jobs";
 import { gradeQuizAttempt, gradeSpeakingActivity } from "./grading-runner";
+import { analyseEvaluation } from "./practice-evaluation";
 
 registerJobHandler("grade_quiz_attempt", async ({ attemptId }) => {
   await gradeQuizAttempt(attemptId);
@@ -17,4 +18,8 @@ registerJobHandler("grade_quiz_attempt", async ({ attemptId }) => {
 
 registerJobHandler("assess_speaking_activity", async ({ activityAttemptId }) => {
   await gradeSpeakingActivity(activityAttemptId);
+});
+
+registerJobHandler("analyse_peer_call", async ({ evaluationId }) => {
+  await analyseEvaluation(evaluationId);
 });

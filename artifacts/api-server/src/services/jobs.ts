@@ -33,6 +33,7 @@ import { logger } from "../lib/logger";
 export type JobName =
   | "grade_quiz_attempt"
   | "assess_speaking_activity"
+  | "analyse_peer_call"
   | "send_notification"
   | "process_audio";
 
@@ -53,6 +54,12 @@ export interface JobPayload {
    * must not hold a lesson open.
    */
   assess_speaking_activity: { activityAttemptId: number };
+  /**
+   * Transcribe and analyse one peer-call recording. Off the request for the
+   * same reason, only more so: diarized ASR over a call of up to thirty minutes
+   * plus a model pass is far longer than any request should wait.
+   */
+  analyse_peer_call: { evaluationId: number };
   send_notification: {
     userId: number;
     type: string;
