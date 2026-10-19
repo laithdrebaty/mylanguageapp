@@ -18,7 +18,7 @@
 import { z } from "zod";
 import type { AITask } from "@workspace/db";
 import { resolveTaskConfig, computeCostUsd, AIUnavailableError } from "../ai-config";
-import { chatJson, AIProviderError, type ChatMessage } from "../ai-providers/openai-compatible";
+import { chatJson, AIProviderError, type ChatMessage } from "../ai-providers";
 import { checkAndIncrement, recordUsage } from "../ai-quota";
 import { logger } from "../../lib/logger";
 

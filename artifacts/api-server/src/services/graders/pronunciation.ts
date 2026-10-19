@@ -28,8 +28,8 @@
 import { z } from "zod";
 import type { AITask } from "@workspace/db";
 import { resolveTaskConfig, computeCostUsd, AIUnavailableError } from "../ai-config";
-import { transcribe } from "../ai-providers/openai-audio";
-import { chatJson, AIProviderError } from "../ai-providers/openai-compatible";
+import { transcribe } from "../ai-providers";
+import { chatJson, AIProviderError } from "../ai-providers";
 import { checkAndIncrement, recordUsage } from "../ai-quota";
 import { storage } from "../storage";
 import {
@@ -59,6 +59,12 @@ export interface SpeechInput {
   levelCode: string | null;
   /** What the block asked, used only for the feedback sentence. */
   prompt?: string | null;
+  /**
+   * The answer a content manager authored as the standard, for an open speaking
+   * prompt. Pronunciation and fluency stay arithmetic — this reaches only the
+   * adviser, so its sentence can say whether the student addressed the task.
+   */
+  modelAnswer?: string | null;
 }
 
 export interface SpeechVerdict {
@@ -270,6 +276,12 @@ async function writeFeedback(
     `Words between pauses: ${verdict.metrics.meanLengthOfRun}.`,
     `Hesitation sounds per 100 words: ${verdict.metrics.fillersPer100Words}.`,
     input.levelCode ? `The student's level is ${input.levelCode}.` : "",
+    input.prompt ? `They were asked: ${input.prompt}` : "",
+    // Content, not pronunciation. Given only to the adviser: the marks above
+    // remain measurements, so a student who spoke clearly is never penalised
+    // here for choosing different words than the author did.
+    input.modelAnswer ? `A model answer covers: ${input.modelAnswer.slice(0, 600)}` : "",
+    verdict.transcript ? `What they actually said: ${verdict.transcript}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -293,6 +305,11 @@ async function writeFeedback(
             "Write feedbackAr: at most two short sentences IN ARABIC naming the",
             "single most useful thing to work on next. If specific words were",
             "missed, name two or three of them. Be encouraging and concrete.",
+            "",
+            "If a model answer is given, it is what the task asked for. Say in a",
+            "few words whether they actually covered it, and name the one thing",
+            "they left out. Judge only whether the content was addressed — never",
+            "require their wording to match the model's.",
             "",
             "Prefer advice that points at material the student already has:",
             "re-reading the passage while listening to the recording, practising",
