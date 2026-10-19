@@ -28,6 +28,22 @@ export interface TranscribedWord {
   end: number;
 }
 
+/**
+ * One continuous stretch of speech by one speaker.
+ *
+ * Only produced when diarization was asked for — a peer call, where telling the
+ * two students apart is the whole point. `speaker` is the provider's own label
+ * ("A", "B"), which identifies nobody by itself: mapping a label to a student is
+ * done separately, and only ever as a guess the caller can see.
+ */
+export interface TranscriptUtterance {
+  speaker: string;
+  text: string;
+  /** Seconds from the start of the recording. */
+  start: number;
+  end: number;
+}
+
 export interface TranscriptionResult {
   text: string;
   /** Seconds. Falls back to the last word's end time when not reported. */
@@ -37,6 +53,8 @@ export interface TranscriptionResult {
   /** True when timings came back, so fluency can be measured. */
   hasWordTimings: boolean;
   modelId: string;
+  /** Per-speaker turns. Empty unless diarization was requested and supported. */
+  utterances?: TranscriptUtterance[];
 }
 
 interface VerboseTranscription {
