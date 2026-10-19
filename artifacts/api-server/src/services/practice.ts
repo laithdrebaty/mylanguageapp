@@ -31,7 +31,7 @@
  * nothing is harmed by waiting.
  */
 
-import { eq, and, or, ne, gte, sql, desc, inArray, asc } from "drizzle-orm";
+import { eq, and, or, ne, gte, lt, sql, desc, inArray, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   db,
@@ -406,6 +406,68 @@ export interface QueueResult {
  * Matching happens on joining rather than on a timer: the person who arrives
  * last is the one with the freshest picture of who is waiting.
  */
+/**
+ * Close calls that nothing is looking at any more.
+ *
+ * `expireIfDue` runs on the polling path, on the stated assumption that "both
+ * sides poll every second during a call, so when someone looks and promptly are
+ * the same thing". That holds while polls arrive — and silently stops holding
+ * when they do not: a browser crash, a closed laptop, or (as happened here) the
+ * polls being rate-limited. The call then stays `active` forever, which is not
+ * a cosmetic problem: the partial unique index on status means BOTH students are
+ * locked out of ever starting another call, and the end-of-call hand-off that
+ * offers an evaluation never runs.
+ *
+ * So this is a safety net with a different trigger — a timer rather than a
+ * request — for exactly the case the polling path cannot cover.
+ *
+ * Deliberately generous: `MAX_CALL_MINUTES` plus a grace period, so a live call
+ * whose polls are merely slow is never cut off by this. The polling path remains
+ * the thing that ends calls normally.
+ */
+export async function closeAbandonedSessions(): Promise<number> {
+  const now = Date.now();
+  // `MAX_CALL_MINUTES` is the cap on a call that is being POLLED; past it the
+  // polling path closes it. This net is for calls nobody is polling at all, so
+  // it only needs to outlast a brief network stall — not a whole extra call.
+  // At cap + 5 a closed tab held both students out of voice practice for 35
+  // minutes, because the one-live-per-person index refuses anyone already in a
+  // call. The client now releases the call on `pagehide`, so this is the net
+  // under that, not the primary mechanism.
+  const activeCutoff = new Date(now - (MAX_CALL_MINUTES + 2) * 60_000);
+  const waitingCutoff = new Date(now - RING_TIMEOUT_MS * 4);
+
+  const stale = await db
+    .select()
+    .from(practiceSessionsTable)
+    .where(
+      or(
+        and(
+          eq(practiceSessionsTable.status, "active"),
+          lt(practiceSessionsTable.startedAt, activeCutoff),
+        ),
+        and(
+          eq(practiceSessionsTable.status, "waiting"),
+          lt(practiceSessionsTable.matchedAt, waitingCutoff),
+        ),
+      ),
+    )
+    .limit(50);
+
+  for (const session of stale) {
+    await closeSession(
+      session,
+      session.status === "waiting" ? "not_answered" : "timeout",
+      null,
+    );
+  }
+
+  if (stale.length > 0) {
+    logger.info({ count: stale.length }, "Closed abandoned practice calls");
+  }
+  return stale.length;
+}
+
 export async function joinQueue(userId: number): Promise<QueueResult> {
   const { levelOrder, preferences } = await loadStudent(userId);
 
