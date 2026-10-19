@@ -32,7 +32,17 @@ import { logger } from "../lib/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type MediaPurpose = "lesson_activity" | "quiz_response" | "curriculum";
+export type MediaPurpose =
+  | "lesson_activity"
+  | "quiz_response"
+  | "curriculum"
+  /**
+   * A peer-call recording uploaded for evaluation. Its own purpose because it
+   * is the one recording containing a second student's voice: it must not be
+   * reachable by a route that accepts a student's own `lesson_activity`
+   * recording, and it is deleted once the transcript exists.
+   */
+  | "practice_call";
 
 export interface BeginUploadInput {
   userId: number;

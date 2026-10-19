@@ -40,7 +40,7 @@ import {
   type Skill,
 } from "./scoring/skill-profile";
 import { resolveTaskConfig, computeCostUsd } from "./ai-config";
-import { chatJson } from "./ai-providers/openai-compatible";
+import { chatJson } from "./ai-providers";
 import { checkAndIncrement, recordUsage } from "./ai-quota";
 import { publishedLessonFilter } from "./learning";
 import { logger } from "../lib/logger";
