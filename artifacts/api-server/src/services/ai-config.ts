@@ -285,6 +285,50 @@ export async function getDailyLimit(
   return policy?.dailyLimit ?? 0;
 }
 
+export interface PlanAllowance {
+  /** Requests per rolling day. Burst control. */
+  daily: number;
+  /** Requests per calendar month, or null when only the daily limit applies. */
+  monthly: number | null;
+  /** Conversation minutes per calendar month, or null when not duration-based. */
+  monthlyMinutes: number | null;
+}
+
+/**
+ * The full allowance for a plan and task.
+ *
+ * The plans are sold by the month — twelve lessons, eight calls — so the
+ * monthly figures are the ones that bound cost. The daily limit remains as
+ * anti-abuse burst control, not as the economic cap.
+ *
+ * Absent policy row means denied, for the same reason as `getDailyLimit`.
+ */
+export async function getPlanAllowance(
+  planCode: string | null,
+  task: AITask,
+): Promise<PlanAllowance> {
+  const [policy] = await db
+    .select({
+      dailyLimit: aiPlanPoliciesTable.dailyLimit,
+      monthlyLimit: aiPlanPoliciesTable.monthlyLimit,
+      monthlyMinutes: aiPlanPoliciesTable.monthlyMinutes,
+    })
+    .from(aiPlanPoliciesTable)
+    .where(
+      and(
+        eq(aiPlanPoliciesTable.planCode, planCode ?? "free"),
+        eq(aiPlanPoliciesTable.task, task),
+      ),
+    )
+    .limit(1);
+
+  return {
+    daily: policy?.dailyLimit ?? 0,
+    monthly: policy?.monthlyLimit ?? null,
+    monthlyMinutes: policy?.monthlyMinutes ?? null,
+  };
+}
+
 // ─── Admin reads ──────────────────────────────────────────────────────────────
 
 /** The whole configuration, with every secret stripped. */
@@ -363,4 +407,80 @@ export async function getTodayUsageByTask(userId: number): Promise<Record<string
     [userId, since],
   );
   return Object.fromEntries(r.rows.map((row) => [row.task, parseInt(row.calls, 10)]));
+}
+
+/**
+ * Spend per student over a window, worst first.
+ *
+ * This is the number that says whether the quotas actually bind. The per-task
+ * summary above shows what the product costs in aggregate; this shows whether
+ * any one student is costing more than their subscription brings in. A heavy
+ * user above the plan price means the limits are set wrong, not that the model
+ * choice is wrong.
+ */
+export async function getUsageByUser(days = 30, limit = 20) {
+  const since = new Date(Date.now() - days * 86_400_000);
+  try {
+    const r = await pool.query(
+      `SELECT l.user_id,
+              u.email,
+              u.name,
+              COALESCE(s.plan_code, 'free')        AS plan_code,
+              COUNT(*)::int                        AS calls,
+              COALESCE(SUM(l.cost_usd), 0)::float8 AS cost_usd,
+              COALESCE(SUM(l.tokens_used), 0)::int AS tokens
+         FROM ai_usage_logs l
+         LEFT JOIN users u ON u.id = l.user_id
+         LEFT JOIN LATERAL (
+           SELECT plan_code FROM student_subscriptions
+            WHERE user_id = l.user_id AND status = 'active'
+            ORDER BY started_at DESC LIMIT 1
+         ) s ON true
+        WHERE l.created_at >= $1
+        GROUP BY l.user_id, u.email, u.name, s.plan_code
+        ORDER BY cost_usd DESC
+        LIMIT $2`,
+      [since, limit],
+    );
+    return r.rows;
+  } catch (err) {
+    logger.error({ err }, "Failed to read AI usage by user");
+    return [];
+  }
+}
+
+/**
+ * Headline numbers for the window: total spend, and the average and worst spend
+ * per active student. The average is what the cost model predicted; the worst
+ * is what an unbounded quota looks like.
+ */
+export async function getUsageTotals(days = 30) {
+  const since = new Date(Date.now() - days * 86_400_000);
+  try {
+    const r = await pool.query(
+      `SELECT COALESCE(SUM(cost_usd), 0)::float8              AS total_cost_usd,
+              COUNT(*)::int                                   AS calls,
+              COALESCE(SUM(CASE WHEN succeeded THEN 0 ELSE 1 END), 0)::int AS failures,
+              COUNT(DISTINCT user_id)::int                    AS active_users
+         FROM ai_usage_logs
+        WHERE created_at >= $1`,
+      [since],
+    );
+    const perUser = await pool.query(
+      `SELECT COALESCE(AVG(c), 0)::float8 AS avg_cost_usd,
+              COALESCE(MAX(c), 0)::float8 AS max_cost_usd
+         FROM (SELECT user_id, SUM(cost_usd) AS c
+                 FROM ai_usage_logs
+                WHERE created_at >= $1
+                GROUP BY user_id) t`,
+      [since],
+    );
+    return { ...r.rows[0], ...perUser.rows[0] };
+  } catch (err) {
+    logger.error({ err }, "Failed to read AI usage totals");
+    return {
+      total_cost_usd: 0, calls: 0, failures: 0,
+      active_users: 0, avg_cost_usd: 0, max_cost_usd: 0,
+    };
+  }
 }

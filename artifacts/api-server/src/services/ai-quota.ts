@@ -36,13 +36,18 @@
 import { withRedisCritical, withRedis } from "./redis";
 import { pool, type AITask } from "@workspace/db";
 import type { AIFeature } from "./ai";
-import { getDailyLimit } from "./ai-config";
+import { getPlanAllowance } from "./ai-config";
 import { logger } from "../lib/logger";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/** YYYY-MM. The plans are sold by the calendar month, so the counter follows it. */
+function monthKeyFor(): string {
+  return new Date().toISOString().slice(0, 7);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -81,12 +86,13 @@ export interface UsageRecord extends QuotaContext {
  *   - Error if Redis is unavailable (fail closed)
  */
 export async function checkAndIncrement(ctx: QuotaContext): Promise<void> {
-  const limit = await getDailyLimit(ctx.subscriptionPlan, ctx.task);
+  const allowance = await getPlanAllowance(ctx.subscriptionPlan, ctx.task);
+  const limit = allowance.daily;
 
   // -1 means unlimited — used for admin and for tasks deliberately uncapped.
-  if (limit < 0) return;
+  if (limit < 0 && (allowance.monthly ?? -1) < 0) return;
 
-  if (limit === 0) {
+  if (limit === 0 || allowance.monthly === 0) {
     throw Object.assign(
       new Error("This AI feature is not included in your plan."),
       { status: 403, code: "AI_QUOTA_PLAN_INELIGIBLE" },
@@ -105,7 +111,7 @@ export async function checkAndIncrement(ctx: QuotaContext): Promise<void> {
     // Set TTL on first request of the day (25h to handle timezone drift)
     if (current === 1) await r.expire(redisKey, 25 * 3600);
 
-    if (current > limit) {
+    if (limit >= 0 && current > limit) {
       // Decrement to not count the failed attempt
       await r.decr(redisKey);
       throw Object.assign(
@@ -115,7 +121,63 @@ export async function checkAndIncrement(ctx: QuotaContext): Promise<void> {
         { status: 429, code: "AI_QUOTA_EXCEEDED" },
       );
     }
+
+    // The monthly allowance is the one the plans are sold in, so it is checked
+    // second and reported differently: hitting it means the month is spent, not
+    // that the student should come back tomorrow.
+    if (allowance.monthly != null && allowance.monthly >= 0) {
+      const monthKey = `v1:ai:monthly:${ctx.userId}:${ctx.task}:${monthKeyFor()}`;
+      const usedThisMonth = await r.incr(monthKey);
+      // 32 days covers the longest month plus the timezone drift the daily
+      // counter already allows for.
+      if (usedThisMonth === 1) await r.expire(monthKey, 32 * 24 * 3600);
+
+      if (usedThisMonth > allowance.monthly) {
+        await r.decr(monthKey);
+        await r.decr(redisKey);
+        throw Object.assign(
+          new Error(
+            `You have used this month's allowance (${allowance.monthly} on your plan). It resets next month.`,
+          ),
+          { status: 429, code: "AI_QUOTA_MONTHLY_EXCEEDED" },
+        );
+      }
+    }
   }, "AI quota check");
+}
+
+/**
+ * Give back an allowance that was claimed but never spent.
+ *
+ * The quota is deliberately claimed BEFORE the work, so a refusal cannot land
+ * after money has already been spent with a provider. The cost of that ordering
+ * is that a failure which spends nothing still consumes the allowance — and on
+ * a plan with two peer-call analyses a day, two failed attempts left the student
+ * locked out until tomorrow having received nothing at all.
+ *
+ * So the caller refunds when it knows no provider was ever billed: audio that
+ * could not be read, a recording with only one voice in it, a transcript too
+ * thin to analyse.
+ *
+ * Best-effort on purpose. A refund that fails must not turn a handled failure
+ * into an unhandled one, and under-refunding is the safe direction: the student
+ * loses an attempt, rather than the budget losing its ceiling.
+ */
+export async function refundQuota(ctx: QuotaContext): Promise<void> {
+  try {
+    await withRedisCritical(async (r) => {
+      const dailyKey = `v1:ai:daily:${ctx.userId}:${ctx.task}:${todayKey()}`;
+      const monthKey = `v1:ai:monthly:${ctx.userId}:${ctx.task}:${monthKeyFor()}`;
+      // Floor at zero: a refund must never hand out a credit, which is what a
+      // negative counter would be.
+      for (const key of [dailyKey, monthKey]) {
+        const current = await r.decr(key);
+        if (current < 0) await r.set(key, "0");
+      }
+    }, "AI quota refund");
+  } catch (err) {
+    logger.warn({ err, task: ctx.task, userId: ctx.userId }, "Could not refund AI quota");
+  }
 }
 
 /**
