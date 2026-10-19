@@ -89,6 +89,20 @@ CREATE TABLE IF NOT EXISTS ai_task_settings (
 
 DO $$
 BEGIN
+  -- NOTE ON THE TASK LIST
+  -- ─────────────────────
+  -- `drizzle-kit push` DROPS every CHECK constraint on this table, because the
+  -- Drizzle schema expresses the task list as a TypeScript enum and not as a
+  -- database constraint. The push runs before these SQL files on every
+  -- migration, so this block re-creates the constraint on every deploy — it is
+  -- not a one-time guard despite the `IF NOT EXISTS`.
+  --
+  -- That makes the list here load-bearing for every FUTURE task as well: if it
+  -- lags behind `AI_TASKS`, the first redeploy after a new task is added fails
+  -- here, because a row for the new task already exists and this constraint
+  -- forbids it. The failure appears only on the SECOND run, which a deploy does
+  -- and a fresh install does not — so keep this list in step with
+  -- `lib/db/src/schema/ai.ts`.
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_task_settings_task_check') THEN
     ALTER TABLE ai_task_settings
       ADD CONSTRAINT ai_task_settings_task_check
@@ -98,7 +112,8 @@ BEGIN
         'conversation',
         'feedback',
         'weakness_analysis',
-        'transcription'
+        'transcription',
+        'peer_call_analysis'
       ));
   END IF;
 
