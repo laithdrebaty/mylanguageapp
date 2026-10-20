@@ -328,6 +328,9 @@ export async function transcribe(
     words,
     hasWordTimings: words.length > 0,
     modelId: config.modelId || "assemblyai",
+    // Multichannel is billed per channel, and the recordings this mode is used
+    // for are always the two-channel peer-call ones (own mic left, peer right).
+    billedChannels: opts.multichannel ? 2 : 1,
     ...(utterances.length > 0 ? { utterances } : {}),
   };
 }

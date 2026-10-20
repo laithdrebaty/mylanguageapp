@@ -38,7 +38,13 @@ import {
   vocabularyTable,
   type AITask,
 } from "@workspace/db";
-import { resolveTaskConfig, computeCostUsd, AIUnavailableError, getPlanAllowance } from "./ai-config";
+import {
+  resolveTaskConfig,
+  computeCostUsd,
+  computeAudioCostUsd,
+  AIUnavailableError,
+  getPlanAllowance,
+} from "./ai-config";
 import { chat, AIProviderError, type ChatMessage } from "./ai-providers";
 import { transcribe } from "./ai-providers";
 import { storage } from "./storage";
@@ -685,6 +691,9 @@ export async function transcribeSpokenTurn(
 
   const started = Date.now();
   let succeeded = false;
+  // Recorded in the `finally` below, so a failure part-way through still logs
+  // whatever audio the provider had already billed for.
+  let audioCostUsd: number | null = null;
 
   try {
     const audio = await storage.download(mediaKey);
@@ -694,6 +703,10 @@ export async function transcribeSpokenTurn(
       languageHint: "en",
     });
     succeeded = true;
+    audioCostUsd = computeAudioCostUsd(config, {
+      durationSeconds: result.durationSeconds,
+      channels: result.billedChannels,
+    });
 
     const text = result.text.trim();
     if (!text) {
@@ -723,6 +736,7 @@ export async function transcribeSpokenTurn(
       provider: config.providerLabel,
       modelId: config.modelId,
       tokensUsed: 0,
+      costUsd: audioCostUsd ?? undefined,
       succeeded,
       latencyMs: Date.now() - started,
     });
