@@ -103,11 +103,41 @@ app.use(
     secret: process.env.SESSION_SECRET ?? "ascension-dev-secret",
     resave: false,
     saveUninitialized: false,
+    /**
+     * Re-send the cookie on every response, so its 30 days are counted from
+     * the student's last visit rather than from the day they logged in.
+     *
+     * Without this the two halves of a session expire on different clocks:
+     * `connect-pg-simple` implements `touch`, so express-session keeps pushing
+     * the DATABASE row's expiry forward on each request, while the BROWSER
+     * cookie keeps the fixed `maxAge` it was given at login. A student using
+     * the app daily was still logged out 30 days after signing in, mid-use and
+     * for no reason they could see — the server-side session was alive and
+     * well; the cookie carrying its id had simply expired.
+     *
+     * The cost is a `Set-Cookie` header on every response, which is a few dozen
+     * bytes and no extra query: the store is touched either way.
+     */
+    rolling: true,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000,
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      /**
+       * `lax` in both, not `none` in production.
+       *
+       * The frontend is served from the same origin as the API — the platform
+       * routes `/api` to this service, which is the whole reason that routing
+       * exists — so the cookie is first-party and `lax` applies cleanly.
+       *
+       * `none` was wrong in two ways. It needs `secure`, so any environment
+       * serving plain HTTP dropped the cookie entirely and the student was
+       * logged out on the next request. And it tells the browser the cookie is
+       * for cross-site use, which modern privacy settings and tracking
+       * protection are increasingly willing to discard — intermittently, and
+       * per-browser, which is exactly what an unexplained logout looks like.
+       */
+      sameSite: "lax",
     },
   }),
 );
