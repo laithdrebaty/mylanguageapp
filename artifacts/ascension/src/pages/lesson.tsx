@@ -917,6 +917,22 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
   };
 
   // ── Submit a single block via API ──────────────────────────────────
+  /**
+   * Blocks the student answers, and which show a verdict afterwards.
+   *
+   * These are the only ones where "submit" and "continue" are two different
+   * intentions: the first click sends the answer, the result appears, and the
+   * second click leaves once they have read it. Every other block type is
+   * something to read or listen to — submitting only records that it was seen,
+   * so holding the student there makes them click the same button twice for
+   * nothing.
+   *
+   * This is also exactly the set a student may skip, for the same underlying
+   * reason: these are the blocks with an answer in them. One list, so the two
+   * behaviours cannot drift apart when a block type is added.
+   */
+  const INTERACTIVE_TYPES = ["mcq", "open_ended", "speaking_prompt", "pronunciation_guide"];
+
   const doSubmitBlock = (block: ContentBlock, extraPatch?: Partial<BlockState>) => {
     const st = { ...getBlockState(block.id), ...(extraPatch ?? {}) };
     setBlockField(block.id, { submitting: true });
@@ -958,6 +974,12 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     }
     // passive blocks: just clientSubmissionId
 
+    // A block the student answered shows them a verdict, so the first click
+    // submits and a second one moves on. A passive block has no verdict to
+    // show — marking it read IS the whole interaction — so stopping there just
+    // asks for the same click twice with nothing happening in between.
+    const advancesImmediately = !INTERACTIVE_TYPES.includes(block.type);
+
     submitActivity.mutate(
       { lessonId, blockId: block.id, data: payload },
       {
@@ -978,6 +1000,10 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
               });
             });
           }
+
+          // Nothing to read here, so go. Interactive blocks stay put: their
+          // verdict is the reason the second click exists.
+          if (advancesImmediately) moveNext();
         },
         onError: () => {
           setBlockField(block.id, { submitting: false });
@@ -1184,12 +1210,11 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
   }
 
   // Passive blocks need no skip — their "متابعة" always advances.
-  const SKIPPABLE_TYPES = ["mcq", "open_ended", "speaking_prompt", "pronunciation_guide"];
   const canSkipCurrentBlock =
     !!currentBlock &&
     !currentBlock.isRequired &&
     !isAlreadySubmitted &&
-    SKIPPABLE_TYPES.includes(currentBlock.type);
+    INTERACTIVE_TYPES.includes(currentBlock.type);
 
   // Label for continue button
   const continueLabel = () => {
