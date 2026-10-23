@@ -1228,8 +1228,24 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     }
   }
 
-  // Passive blocks need no skip — their "متابعة" always advances.
-  const SKIPPABLE_TYPES = ["mcq", "open_ended", "speaking_prompt", "pronunciation_guide"];
+  /**
+   * Blocks that ask the student to DO something, so an optional one needs a way
+   * past it. Truly passive blocks — a reading passage, a vocabulary list — are
+   * left out because their "متابعة" already advances and a second button
+   * offering to skip reading would be noise.
+   *
+   * `dialogue` belongs here even though the server records it as a passive
+   * attempt: it carries the AI tutor, so an optional conversation a student does
+   * not want to have was a dead end — the only button on screen submitted the
+   * block and started the tutor.
+   */
+  const SKIPPABLE_TYPES = [
+    "mcq",
+    "open_ended",
+    "speaking_prompt",
+    "pronunciation_guide",
+    "dialogue",
+  ];
   const canSkipCurrentBlock =
     !!currentBlock &&
     !currentBlock.isRequired &&
