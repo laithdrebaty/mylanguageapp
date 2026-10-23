@@ -50,3 +50,14 @@ Thumbs.db
 
 # Local env
 .env
+
+# Loose notes, credentials and documents
+#
+# These accumulate at the repo root during development — API keys pasted into a
+# file, deployment notes, exported PDFs. None of it belongs in version control,
+# and a blanket rule is safer than remembering to ignore each one.
+*.txt
+*.pdf
+
+# robots.txt is served by the web app, so it has to stay tracked.
+!artifacts/ascension/public/robots.txt
