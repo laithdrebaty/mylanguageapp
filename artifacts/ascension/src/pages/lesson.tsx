@@ -112,6 +112,42 @@ function BlockHeader({ block }: { block: ContentBlock }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Optional illustration media
+// ──────────────────────────────────────────────────────────────────────
+/**
+ * The image and/or audio a content manager attached to this block.
+ *
+ * Deliberately NOT tied to a block type. Several types have a media field of
+ * their own with grading meaning — a pronunciation block's reference recording
+ * is what its score is measured against — but most types had no way to carry a
+ * picture at all. These two fields are purely illustrative: shown if present,
+ * absent otherwise, and never read by a grader.
+ *
+ * Renders nothing when neither is set, which is the common case, so it is safe
+ * to mount in every block type.
+ *
+ * PLACEMENT: immediately after whatever the block presents as its question or
+ * subject — the MCQ question card, the open-ended prompt, the speaking passage,
+ * the spelled word — and before the controls the student acts with. A picture
+ * that belongs to a question is part of reading it, so it has to arrive before
+ * the student starts answering rather than below the whole block where it would
+ * be missed. On passive blocks, which have no question, it follows the header.
+ */
+function BlockIllustration({ block }: { block?: ContentBlock | null }) {
+  if (!block) return null;
+  const imageId = block.imageMediaId;
+  const audioId = block.audioMediaId;
+  if (!imageId && !audioId) return null;
+
+  return (
+    <div className="mt-6 space-y-3">
+      {imageId ? <BlockMedia mediaId={imageId} kind="image" /> : null}
+      {audioId ? <BlockMedia mediaId={audioId} kind="audio" /> : null}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Audio widget
 // ──────────────────────────────────────────────────────────────────────
 function AudioWidget({ url, label }: { url: string; label?: string }) {
@@ -164,6 +200,8 @@ function McqBlock({
           <h2 className="text-2xl font-bold font-serif" dir="ltr">{question}</h2>
         )}
       </div>
+
+      <BlockIllustration block={block} />
 
       {isUsableUrl(block.audioUrl) && <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />}
 
@@ -293,6 +331,8 @@ function OpenEndedBlock({
       {block.prompt && (
         <p className="text-sm text-muted-foreground" dir="ltr">{block.prompt}</p>
       )}
+
+      <BlockIllustration block={block} />
 
       {isUsableUrl(block.audioUrl) && <AudioWidget url={block.audioUrl!} label={block.audioNote ?? undefined} />}
 
@@ -551,6 +591,8 @@ function SpeakingBlock({
         </div>
       )}
 
+      <BlockIllustration block={block} />
+
       {isUsableUrl(block.exampleAudio) && (
         <AudioWidget url={block.exampleAudio!} label="استمع للمثال الصوتي" />
       )}
@@ -740,6 +782,7 @@ function VocabularyBlock({ block }: { block: ContentBlock }) {
   return (
     <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
       <BlockHeader block={block} />
+      <BlockIllustration block={block} />
       {(!block.vocabularyItems || block.vocabularyItems.length === 0) && (
         <p className="text-muted-foreground text-sm">لا توجد مفردات.</p>
       )}
@@ -783,6 +826,7 @@ function TextBlock({ block }: { block: ContentBlock }) {
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <BlockHeader block={block} />
+      <BlockIllustration block={block} />
       {block.contentAr && (
         <p className="text-lg md:text-xl leading-relaxed text-foreground text-right" dir="rtl">
           {block.contentAr}
@@ -813,6 +857,7 @@ function AudioPlaceholderBlock({ block }: { block: ContentBlock }) {
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <BlockHeader block={block} />
+      <BlockIllustration block={block} />
       {isUsableUrl(block.audioUrl) ? (
         <AudioWidget url={block.audioUrl!} label={block.audioNote ?? "استمع للمقطع الصوتي"} />
       ) : block.referenceMediaId ? (
@@ -918,20 +963,29 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
 
   // ── Submit a single block via API ──────────────────────────────────
   /**
-   * Blocks the student answers, and which show a verdict afterwards.
+   * Blocks that must NOT advance on their own once submitted.
    *
-   * These are the only ones where "submit" and "continue" are two different
-   * intentions: the first click sends the answer, the result appears, and the
-   * second click leaves once they have read it. Every other block type is
-   * something to read or listen to — submitting only records that it was seen,
-   * so holding the student there makes them click the same button twice for
-   * nothing.
+   * For these, "submit" and "continue" are two different intentions: the first
+   * click sends the answer, a verdict appears, and the second click leaves once
+   * the student has read it. Every other block type is something to read or
+   * listen to — submitting only records that it was seen — so stopping there
+   * asks for the same click twice with nothing happening in between.
    *
-   * This is also exactly the set a student may skip, for the same underlying
-   * reason: these are the blocks with an answer in them. One list, so the two
-   * behaviours cannot drift apart when a block type is added.
+   * `dialogue` is here for a different reason: it shows no verdict, but
+   * submitting it OPENS THE AI TUTOR. Advancing past it automatically would
+   * skip the conversation the block exists for.
+   *
+   * Related to but not the same as SKIPPABLE_TYPES below, which also contains
+   * `dialogue` — a student may decline an optional conversation, but may not be
+   * carried past one they did start.
    */
-  const INTERACTIVE_TYPES = ["mcq", "open_ended", "speaking_prompt", "pronunciation_guide"];
+  const AUTO_ADVANCE_EXEMPT = [
+    "mcq",
+    "open_ended",
+    "speaking_prompt",
+    "pronunciation_guide",
+    "dialogue",
+  ];
 
   const doSubmitBlock = (block: ContentBlock, extraPatch?: Partial<BlockState>) => {
     const st = { ...getBlockState(block.id), ...(extraPatch ?? {}) };
@@ -978,7 +1032,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     // submits and a second one moves on. A passive block has no verdict to
     // show — marking it read IS the whole interaction — so stopping there just
     // asks for the same click twice with nothing happening in between.
-    const advancesImmediately = !INTERACTIVE_TYPES.includes(block.type);
+    const advancesImmediately = !AUTO_ADVANCE_EXEMPT.includes(block.type);
 
     submitActivity.mutate(
       { lessonId, blockId: block.id, data: payload },
@@ -1209,12 +1263,32 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     }
   }
 
-  // Passive blocks need no skip — their "متابعة" always advances.
+  /**
+   * Blocks that ask the student to DO something, so an optional one needs a way
+   * past it. Truly passive blocks — a reading passage, a vocabulary list — are
+   * left out because their "متابعة" already advances and a second button
+   * offering to skip reading would be noise.
+   *
+   * `dialogue` belongs here even though the server records it as a passive
+   * attempt: it carries the AI tutor, so an optional conversation a student does
+   * not want to have was a dead end — the only button on screen submitted the
+   * block and started the tutor.
+   *
+   * Deliberately NOT the same list as AUTO_ADVANCE_EXEMPT above: `dialogue` is
+   * skippable but must not auto-advance, because submitting it opens the tutor.
+   */
+  const SKIPPABLE_TYPES = [
+    "mcq",
+    "open_ended",
+    "speaking_prompt",
+    "pronunciation_guide",
+    "dialogue",
+  ];
   const canSkipCurrentBlock =
     !!currentBlock &&
     !currentBlock.isRequired &&
     !isAlreadySubmitted &&
-    INTERACTIVE_TYPES.includes(currentBlock.type);
+    SKIPPABLE_TYPES.includes(currentBlock.type);
 
   // Label for continue button
   const continueLabel = () => {
@@ -1252,6 +1326,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
         return (
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
             <BlockHeader block={currentBlock} />
+            <BlockIllustration block={currentBlock} />
             {/* `content` is NOT shown. For a dialogue block it is the script the
                 tutor follows (services/conversation.ts reads it as `script`),
                 so printing it here handed the student both halves of the
@@ -1301,6 +1376,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
                 </p>
               </div>
             )}
+            <BlockIllustration block={currentBlock} />
             {isUsableUrl(currentBlock.audioUrl) && <AudioWidget url={currentBlock.audioUrl!} label={currentBlock.audioNote ?? undefined} />}
           </div>
         );
@@ -1354,6 +1430,7 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
         return (
           <div className="space-y-4">
             <BlockHeader block={currentBlock} />
+            <BlockIllustration block={currentBlock} />
             <p className="text-muted-foreground text-sm">نوع المحتوى: {currentBlock.type}</p>
           </div>
         );
