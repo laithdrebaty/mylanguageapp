@@ -292,6 +292,11 @@ ingress:
           prefix: /api
       component:
         name: api
+        # App Platform STRIPS the matched prefix before forwarding, so without
+        # this the API receives /healthz rather than /api/healthz — and every
+        # route is mounted under /api (`app.use("/api", router)`), so every
+        # request 404s with "Cannot GET /healthz".
+        preserve_path_prefix: true
     - match:
         path:
           prefix: /
