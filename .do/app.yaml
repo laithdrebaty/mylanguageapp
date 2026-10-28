@@ -267,7 +267,16 @@ static_sites:
       branch: main
       deploy_on_push: true
 
-    build_command: pnpm install --frozen-lockfile && pnpm --filter @workspace/ascension run build
+    # npx rather than a bare `pnpm`: the static-site buildpack is Node + npm,
+    # and pnpm is not on its PATH. A fallback to npm does not work either —
+    # the root package.json has a preinstall guard that exits 1 for any
+    # non-pnpm install manager, so the build fails with "Use pnpm instead".
+    #
+    # --prod=false because NODE_ENV=production would otherwise skip
+    # devDependencies, and Vite is one of them.
+    #
+    # render.yaml solves the same problem the same way.
+    build_command: npx --yes pnpm@10.5.2 install --frozen-lockfile --prod=false && npx --yes pnpm@10.5.2 --filter @workspace/ascension run build
     output_dir: artifacts/ascension/dist/public
 
     # Single-page app: every unmatched path serves index.html so client-side
