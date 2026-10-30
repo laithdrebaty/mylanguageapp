@@ -173,6 +173,8 @@ services:
 
       # Shared counter for lesson recordings and call recordings alike.
       MEDIA_DAILY_UPLOAD_LIMIT: ${MEDIA_DAILY_UPLOAD_LIMIT:-200}
+      # Attempts allowed per block per lesson. Passive blocks are exempt.
+      MAX_BLOCK_ATTEMPTS: ${MAX_BLOCK_ATTEMPTS:-3}
 
       # Swagger UI. Off unless set — explicit rather than merely absent.
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-}

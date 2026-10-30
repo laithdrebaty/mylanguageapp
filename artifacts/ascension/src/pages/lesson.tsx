@@ -81,6 +81,12 @@ interface BlockState {
   /** Filled in once the background speech assessment reports back. */
   speechVerdict?: AttemptVerdict;
   awaitingVerdict?: boolean;
+  /**
+   * Set when the server refused a submission because the block's attempts are
+   * used up. Distinct from `submitted`: there is no verdict to show, and the
+   * only thing left for the student to do is continue.
+   */
+  attemptsExhausted?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1059,8 +1065,28 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
           // verdict is the reason the second click exists.
           if (advancesImmediately) moveNext();
         },
-        onError: () => {
+        onError: (err: unknown) => {
           setBlockField(block.id, { submitting: false });
+
+          // Running out of attempts is not an error the student should be told
+          // to retry — "حاول مجدداً" is exactly the wrong advice when the
+          // reason is that there are no attempts left. Say so, and let them
+          // move on rather than leaving them stuck on a block that will keep
+          // refusing.
+          const apiError = err as {
+            status?: number;
+            data?: { code?: string; maxAttempts?: number };
+          };
+          if (apiError?.data?.code === "ATTEMPT_LIMIT_REACHED") {
+            const max = apiError.data.maxAttempts ?? 3;
+            setBlockField(block.id, { submitted: true, attemptsExhausted: true });
+            toast({
+              title: "انتهت المحاولات",
+              description: `استخدمت ${max} محاولات لهذا التمرين. يمكنك المتابعة.`,
+            });
+            return;
+          }
+
           toast({
             variant: "destructive",
             title: "خطأ",
