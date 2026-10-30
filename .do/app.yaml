@@ -310,3 +310,42 @@ ingress:
 alerts:
   - rule: DEPLOYMENT_FAILED
   - rule: DOMAIN_FAILED
+
+  # Resource alerts on the API container. 70/80 rather than something tighter
+  # because a load test at far above launch volume left the app itself at 17%
+  # of both — so these are a real signal, not noise.
+  #
+  # FIVE_MINUTES so a momentary spike during a deploy does not page anyone.
+  - rule: CPU_UTILIZATION
+    operator: GREATER_THAN
+    value: 70
+    window: FIVE_MINUTES
+  - rule: MEM_UTILIZATION
+    operator: GREATER_THAN
+    value: 80
+    window: FIVE_MINUTES
+  - rule: RESTART_COUNT
+    operator: GREATER_THAN
+    value: 3
+    window: FIVE_MINUTES
+
+# ── Database alerts are NOT here ──────────────────────────────────────────────
+#
+# Postgres and Valkey alerts are account-level policies attached to clusters by
+# name, so they exist only in the DO dashboard (Monitoring → Alert policies) and
+# cannot be expressed in an app spec. They matter more than the app's own:
+# measured under load the app sat at 17% CPU while Postgres peaked at 40-49%,
+# so the database saturates first and the app's metrics look healthy while it
+# does.
+#
+# What should exist there, all at a five-minute window:
+#
+#   Postgres (db-pgsql-…)   Memory      > 85%   ← the binding constraint
+#                           CPU         > 70%
+#                           Disk        > 80%
+#   Valkey   (db-vk-…)      Memory      > 85%   ← sessions live here now, so a
+#                                               full Valkey logs everyone out
+#
+# Memory is listed first for Postgres deliberately. It sat at 72-75% through
+# every load test while CPU had headroom, and unlike CPU it degrades sharply
+# rather than gradually once the working set stops fitting in cache.
