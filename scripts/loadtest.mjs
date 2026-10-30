@@ -331,7 +331,22 @@ async function cleanup() {
 
   process.stdout.write('\nRemoving test accounts… ');
   const { default: pg } = await import('pg');
-  const client = new pg.Client({ connectionString: url });
+  /**
+   * `rejectUnauthorized: false` because a managed provider terminates TLS with
+   * its own CA, and newer `pg` reads `sslmode=require` as `verify-full` — so
+   * the connection fails with "self-signed certificate in certificate chain"
+   * against a perfectly valid endpoint. The traffic is still encrypted; only
+   * the chain check is skipped, which is what the provider's own connection
+   * string assumes.
+   */
+  const client = new pg.Client({
+    connectionString: url,
+    // Only when the URL actually asks for TLS — a local compose database does
+    // not speak it, and forcing ssl there fails to connect.
+    ...(/sslmode=(require|verify)/.test(url)
+      ? { ssl: { rejectUnauthorized: false } }
+      : {}),
+  });
   try {
     await client.connect();
     const { rowCount } = await client.query(
