@@ -18,6 +18,7 @@ import docsRouter from "./routes/docs";
 import { logger } from "./lib/logger";
 import { pool } from "@workspace/db";
 import { redis } from "./services/redis";
+import { createRedisSessionStore } from "./services/session-store";
 // Side-effect import: registers the handlers the background queue dispatches to.
 import "./services/job-handlers";
 
@@ -89,17 +90,38 @@ if (!process.env.SESSION_SECRET) {
   logger.warn("SESSION_SECRET not set — using insecure default (development only)");
 }
 
+/**
+ * Sessions live in Redis when it is configured, PostgreSQL otherwise.
+ *
+ * Measured under load, the PostgreSQL store was just under half of all
+ * database time — two queries on every request from every user, one to read
+ * the session and one to push its expiry out for `rolling` below. In Redis
+ * those are a GET and an EXPIRE, both in memory.
+ *
+ * The trade is that Redis becomes load-bearing for authentication rather than
+ * only for the AI quota and the cache; see services/session-store.ts.
+ */
 const PgSession = connectPgSimple(session);
+const redisSessionStore = createRedisSessionStore();
+if (redisSessionStore) {
+  logger.info("Sessions stored in Redis");
+} else {
+  logger.info("Sessions stored in PostgreSQL (REDIS_URL not set)");
+}
+
 app.use(
   session({
-    store: new PgSession({
-      pool,
-      tableName: "session",
-      createTableIfMissing: true,
-      // Seconds between expired-session cleanups. The 15-minute default wakes a
-      // scale-to-zero database (Neon free tier) around the clock; raise it there.
-      pruneSessionInterval: parseInt(process.env.SESSION_PRUNE_INTERVAL_S ?? "900", 10),
-    }),
+    store:
+      redisSessionStore ??
+      new PgSession({
+        pool,
+        tableName: "session",
+        createTableIfMissing: true,
+        // Seconds between expired-session cleanups. The 15-minute default wakes
+        // a scale-to-zero database (Neon free tier) around the clock; raise it
+        // there. Unused when Redis holds the sessions: it expires its own keys.
+        pruneSessionInterval: parseInt(process.env.SESSION_PRUNE_INTERVAL_S ?? "900", 10),
+      }),
     secret: process.env.SESSION_SECRET ?? "ascension-dev-secret",
     resave: false,
     saveUninitialized: false,
