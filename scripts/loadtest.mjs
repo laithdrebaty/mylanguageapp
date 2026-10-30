@@ -256,18 +256,27 @@ console.log('callers    poll p50   poll p95   poll p99   sig p95   errors');
 console.log('─'.repeat(70));
 
 const results = [];
-for (const n of STAGES) {
-  if (n > clients.length) {
-    console.log(`${String(n).padEnd(10)} skipped — only ${clients.length} accounts`);
-    continue;
+// Measurement is wrapped so that a crash — or Ctrl+C handled below — still
+// reaches cleanup. Accounts leaking on a failed run is exactly the case where
+// leaving them behind is least welcome.
+let measurementError = null;
+try {
+  for (const n of STAGES) {
+    if (n > clients.length) {
+      console.log(`${String(n).padEnd(10)} skipped — only ${clients.length} accounts`);
+      continue;
+    }
+    const r = await runStage(clients, n);
+    results.push(r);
+    const errs = r.errors.length === 0 ? 'none' : r.errors.map(([s, c]) => `${s}×${c}`).join(' ');
+    console.log(
+      `${String(n).padEnd(10)} ${fmt(r.poll.p50)}   ${fmt(r.poll.p95)}   ${fmt(r.poll.p99)}   ` +
+        `${r.signals ? fmt(r.signals.p95) : '      —'}   ${errs}`,
+    );
   }
-  const r = await runStage(clients, n);
-  results.push(r);
-  const errs = r.errors.length === 0 ? 'none' : r.errors.map(([s, c]) => `${s}×${c}`).join(' ');
-  console.log(
-    `${String(n).padEnd(10)} ${fmt(r.poll.p50)}   ${fmt(r.poll.p95)}   ${fmt(r.poll.p99)}   ` +
-      `${r.signals ? fmt(r.signals.p95) : '      —'}   ${errs}`,
-  );
+} catch (e) {
+  measurementError = e;
+  console.error(`\nRun aborted: ${e.message}`);
 }
 
 // ─── What the numbers mean ────────────────────────────────────────────────────
@@ -293,8 +302,65 @@ console.log(
   'Watch Postgres CPU in the DO dashboard while this runs — it saturates before the API does,\n' +
     'and it is the number that decides when to move to a larger database tier.',
 );
-console.log(
-  '\nThese accounts and their queue rows are left behind on purpose, so a failed run can be\n' +
-    'inspected. Clean up with:\n' +
-    `  DELETE FROM users WHERE email LIKE '${PREFIX}+%@example.invalid';`,
-);
+// ─── Cleanup ──────────────────────────────────────────────────────────────────
+
+/**
+ * Remove the accounts this run created.
+ *
+ * Needs a database connection: there is no delete-account endpoint, and adding
+ * one so a load test could tidy up after itself would be a real liability on a
+ * real deployment for the sake of a script.
+ *
+ * Deleting the `users` row is enough. Twenty-two tables reference it with
+ * `on delete cascade` — profiles, subscriptions, attempts, queue rows,
+ * signals — so they go with it. A handful of CMS and review columns reference
+ * users WITHOUT a cascade and are NOT NULL; a load-test account never writes
+ * those, but if one somehow did, the delete fails loudly here rather than
+ * leaving half a user behind.
+ */
+async function cleanup() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.log(
+      '\nAccounts were left behind: DATABASE_URL is not set, and they cannot be removed over\n' +
+        'HTTP. Re-run with DATABASE_URL to tidy up automatically, or delete them by hand:\n' +
+        `  DELETE FROM users WHERE email LIKE '${PREFIX}+%@example.invalid';`,
+    );
+    return;
+  }
+
+  process.stdout.write('\nRemoving test accounts… ');
+  const { default: pg } = await import('pg');
+  const client = new pg.Client({ connectionString: url });
+  try {
+    await client.connect();
+    const { rowCount } = await client.query(
+      `delete from users where email like $1`,
+      [`${PREFIX}+%@example.invalid`],
+    );
+    console.log(`${rowCount} removed.`);
+  } catch (e) {
+    console.log('failed.');
+    console.error(`  ${e.message}`);
+    console.error(
+      `  Remove them by hand:\n` +
+        `  DELETE FROM users WHERE email LIKE '${PREFIX}+%@example.invalid';`,
+    );
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+// Ctrl+C during a long hold should not strand the accounts either.
+let interrupted = false;
+process.on('SIGINT', async () => {
+  if (interrupted) process.exit(130);
+  interrupted = true;
+  console.log('\nInterrupted — cleaning up before exit.');
+  await cleanup();
+  process.exit(130);
+});
+
+await cleanup();
+
+if (measurementError) process.exit(1);
