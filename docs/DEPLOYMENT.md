@@ -165,5 +165,5 @@ in production:
 | Paywall | `subscription_plans.lessonsAccess` is read by no route — every student has full access regardless of plan. |
 | Email | No provider configured, so there is no password reset. A forgotten password is permanent account loss. |
 | Session roles | `req.session.role` is copied at login and never rechecked on a 30-day cookie, so a demotion or ban takes up to a month to take effect. |
-| TURN | `PRACTICE_TURN_URLS` is empty, so voice practice is STUN-only and roughly one call in five will not connect. Worse, the variable is not passed to the API at all — see [features/peer-calls-deployment-checklist.md](features/peer-calls-deployment-checklist.md) for the full list of what peer calls still need. |
+| TURN | `PRACTICE_TURN_URLS` is empty, so voice practice is STUN-only and roughly one call in five will not connect. |
 | AI | No provider configured. Speaking and pronunciation submissions stay `pending` and fall to the human marking queue at `/cms/grading` — correct behaviour, but nothing alerts when that queue grows. |

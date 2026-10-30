@@ -40,11 +40,6 @@ What makes this defensible rather than negligent is the failure path. The handsh
 
 If the failure rate turns out to matter in practice, self-hosting coturn is the next step and needs no application change beyond the three environment variables.
 
-**Before this works on a deployed app** there is a short list of configuration
-and infrastructure gaps — the TURN variables are not even passed to the API
-container today, so setting them has no effect. Tracked in
-[peer-calls-deployment-checklist.md](./peer-calls-deployment-checklist.md).
-
 ### Matching
 
 `services/scoring/practice-match.ts` is a pure function with its own test file, because the exclusions in it are the safety rules of the feature and rules that can only be checked by making two real browsers call each other do not get checked.
