@@ -194,10 +194,22 @@ async function runStage(clients, n) {
       pollSamples.push(poll.ms);
       note(poll.status);
 
+      // A matched pair starts at `waiting` and only becomes `active` when the
+      // partner accepts. Polling alone therefore never reaches the signalling
+      // path — which is the heavier half of the load and the whole reason this
+      // test exists — so the callee accepts here, exactly as a student tapping
+      // "answer" would.
+      const session = poll.body?.session;
+      if (session?.status === 'waiting' && session.isCaller === false) {
+        await c.request('POST', `/api/practice/sessions/${session.sessionId}/accept`).catch(() => {});
+      }
+
       // In a call, the client polls the signal mailbox on the same timer. The
       // session id is whatever the poll reported; without one this still
       // measures the queue path, which is the other half of the load.
-      const sessionId = poll.body?.session?.id;
+      // `sessionId`, not `id` — PracticeSessionView names it that way, and reading
+      // the wrong field is why earlier runs reported no signalling samples at all.
+      const sessionId = session?.sessionId;
       if (sessionId) {
         const sig = await c
           .request('GET', `/api/practice/sessions/${sessionId}/signals?after=0`)
