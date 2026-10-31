@@ -645,9 +645,13 @@ function SpeakingBlock({
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             <span className="text-xs text-foreground">جارٍ تقييم نطقك…</span>
           </div>
+          {/* Says what is certainly true and nothing more. The lesson summary
+              does collect verdicts that arrive while the student is still in
+              the lesson, which is the common case — but one that lands after
+              they leave it is not retrievable anywhere, so promising a place
+              to find it would be wrong some of the time. */}
           <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-            يستغرق التقييم عادةً أقل من دقيقة. يمكنك المتابعة وسيظهر التقييم في ملخّص
-            الدرس عند انتهائه.
+            يستغرق التقييم عادةً أقل من دقيقة، ويمكنك المتابعة أثناءه.
           </p>
         </div>
       )}
