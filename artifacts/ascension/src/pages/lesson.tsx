@@ -631,8 +631,25 @@ function SpeakingBlock({
         <p className="text-xs text-center text-emerald-600">تم حفظ التسجيل.</p>
       )}
 
+      {/* Assessment takes seconds: the recording is uploaded, transcribed by a
+          speech recogniser, then scored. A single line of static grey text for
+          all of that reads as frozen — the student has no way to tell a working
+          request from a stuck one, and nothing to do but stare at it.
+
+          So: visible motion, a stated expectation, and the one fact that
+          actually helps — they do not have to wait here. متابعة stays enabled
+          throughout. */}
       {state.awaitingVerdict && (
-        <p className="text-xs text-center text-muted-foreground">جارٍ تقييم نطقك…</p>
+        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-border bg-secondary/50 p-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-xs text-foreground">جارٍ تقييم نطقك…</span>
+          </div>
+          <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+            يستغرق التقييم عادةً أقل من دقيقة. يمكنك المتابعة وسيظهر التقييم في ملخّص
+            الدرس عند انتهائه.
+          </p>
+        </div>
       )}
 
       {state.speechVerdict && <SpeechVerdictCard verdict={state.speechVerdict} />}
@@ -1216,6 +1233,25 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
     const passed = finishResult.passed;
     const xpEarned = finishResult.xpEarned;
 
+    /**
+     * Speech verdicts collected here, because the student was told they could
+     * carry on rather than watch a spinner.
+     *
+     * Assessment is asynchronous by design — upload, speech recogniser, score —
+     * and the waiting panel on a speaking block says متابعة is safe and the
+     * result will appear in this summary. That sentence has to be true, so the
+     * summary is where every verdict ends up: the ones that arrived while the
+     * student kept working, and the ones still in flight.
+     *
+     * Read from block state rather than refetched: `pollAttemptVerdict` writes
+     * each result into the block it belongs to as it lands, and that continues
+     * while the student moves through the lesson.
+     */
+    const speechBlocks = blocks
+      .filter((b) => b.type === "speaking_prompt" || b.type === "pronunciation_guide")
+      .map((b) => ({ block: b, state: getBlockState(b.id) }))
+      .filter((x) => x.state.speechVerdict || x.state.awaitingVerdict);
+
     return (
       <div dir="rtl" className="min-h-[100dvh] flex items-center justify-center p-4 bg-background">
         <Card className="max-w-lg w-full text-center shadow-xl border-t-8 border-t-primary">
@@ -1243,6 +1279,39 @@ export default function Lesson({ params }: { params: { lessonId: string } }) {
                 <div className="text-sm text-muted-foreground">XP</div>
               </div>
             </div>
+
+            {/* Pronunciation feedback, including anything that finished after
+                the student moved on. This is the promise the waiting panel
+                makes, kept. */}
+            {speechBlocks.length > 0 && (
+              <div className="space-y-3 border-t pt-5 text-right">
+                <h3 className="text-sm font-bold text-foreground">تقييم النطق</h3>
+                {speechBlocks.map(({ block, state }) => (
+                  <div key={block.id} className="space-y-1.5">
+                    {(block.titleAr || block.title) && (
+                      <p className="text-xs text-muted-foreground">
+                        {block.titleAr || block.title}
+                      </p>
+                    )}
+                    {state.speechVerdict ? (
+                      <SpeechVerdictCard verdict={state.speechVerdict} />
+                    ) : (
+                      // Deliberately promises no viewing location. A verdict
+                      // that lands after the student leaves this screen is not
+                      // retrievable anywhere today — the data is in
+                      // `learning_activity_attempts`, but nothing reads it back
+                      // — so saying "check your progress page" would be untrue.
+                      <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-secondary/50 p-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <span className="text-xs text-muted-foreground">
+                          ما زال التقييم جارياً. تسجيلك محفوظ وسيُقيَّم.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <Button
